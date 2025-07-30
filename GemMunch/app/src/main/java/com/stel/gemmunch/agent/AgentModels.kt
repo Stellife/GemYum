@@ -55,5 +55,9 @@ data class MealAnalysis(
     val items: List<AnalyzedFoodItem>,
     val generatedAt: Instant,
     val modelName: String,
-    val performanceMetrics: PerformanceMetrics? = null
+    val performanceMetrics: PerformanceMetrics? = null,
+    val rawAiResponse: String? = null, // Store raw response for feedback documentation
+    val isError: Boolean = false,
+    val errorType: String? = null, // e.g., "MULTIPLE_JSON_ARRAYS", "MALFORMED_JSON"
+    val errorMessage: String? = null
 )

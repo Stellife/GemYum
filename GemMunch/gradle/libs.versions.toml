@@ -14,6 +14,8 @@ kotlinxCoroutines = "1.10.2"
 room = "2.7.2"
 kotlinxSerializationJson = "1.9.0"
 materialIconsExtended = "1.7.8"
+healthConnect = "1.1.0-rc02"
+accompanistPermissions = "0.32.0"
 
 
 # AI Library Versions - CORRECTED
@@ -61,6 +63,9 @@ google-ai-edge-localagents-rag = { group = "com.google.ai.edge.localagents", nam
 google-mediapipe-tasks-genai = { group = "com.google.mediapipe", name = "tasks-genai", version.ref = "mediapipeTasksGenai" }
 litert-api = { group = "com.google.ai.edge.litert", name = "litert-api", version.ref = "litertApi" }
 
+# Health Connect
+androidx-health-connect = { group = "androidx.health.connect", name = "connect-client", version.ref = "healthConnect" }
+accompanist-permissions = { group = "com.google.accompanist", name = "accompanist-permissions", version.ref = "accompanistPermissions" }
 
 
 [plugins]

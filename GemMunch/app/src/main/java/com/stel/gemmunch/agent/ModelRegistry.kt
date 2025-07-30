@@ -46,20 +46,20 @@ object ModelRegistry {
         ),
         // Language models (.litertlm format) - require LiteRT-LM runtime (not MediaPipe)
         // Currently text-only, no vision support
-        ModelAsset(
-            logicalName = "GEMMA_3N_E2B_LM",
-            displayName = "Gemma 3n E2B LM (Text)",
-            url = "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm-preview/resolve/main/gemma-3n-E2B-it-int4.litertlm",
-            fileName = "gemma-3n-E2B-it-int4.litertlm",
-            type = ModelType.LANGUAGE_MODEL
-        ),
-        ModelAsset(
-            logicalName = "GEMMA_3N_E4B_LM",
-            displayName = "Gemma 3n E4B LM (Text)",
-            url = "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm-preview/resolve/main/gemma-3n-E4B-it-int4.litertlm",
-            fileName = "gemma-3n-E4B-it-int4.litertlm",
-            type = ModelType.LANGUAGE_MODEL
-        )
+//        ModelAsset(
+//            logicalName = "GEMMA_3N_E2B_LM",
+//            displayName = "Gemma 3n E2B LM (Text)",
+//            url = "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm-preview/resolve/main/gemma-3n-E2B-it-int4.litertlm",
+//            fileName = "gemma-3n-E2B-it-int4.litertlm",
+//            type = ModelType.LANGUAGE_MODEL
+//        ),
+//        ModelAsset(
+//            logicalName = "GEMMA_3N_E4B_LM",
+//            displayName = "Gemma 3n E4B LM (Text)",
+//            url = "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm-preview/resolve/main/gemma-3n-E4B-it-int4.litertlm",
+//            fileName = "gemma-3n-E4B-it-int4.litertlm",
+//            type = ModelType.LANGUAGE_MODEL
+//        )
     )
 
     /** Returns the complete list of all models for the downloader. */

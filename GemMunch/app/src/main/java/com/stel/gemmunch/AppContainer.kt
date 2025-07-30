@@ -7,6 +7,8 @@ import com.stel.gemmunch.data.api.UsdaApiService
 import com.stel.gemmunch.data.models.EnhancedNutrientDbHelper
 import com.stel.gemmunch.data.NutrientDatabaseManager
 import com.stel.gemmunch.data.InitializationMetrics
+import com.stel.gemmunch.data.FeedbackStorageService
+import com.stel.gemmunch.data.HealthConnectManager
 import com.stel.gemmunch.utils.GsonProvider
 import com.stel.gemmunch.utils.VisionModelPreferencesManager
 import com.google.mediapipe.tasks.genai.llminference.GraphOptions
@@ -32,6 +34,8 @@ private const val TAG = "AppContainer"
 interface AppContainer {
     val applicationContext: Context
     val photoMealExtractor: PhotoMealExtractor?
+    val feedbackStorageService: FeedbackStorageService
+    val healthConnectManager: HealthConnectManager
     val isReady: StateFlow<Boolean>
 
     suspend fun initialize(modelFiles: Map<String, File>)
@@ -58,6 +62,14 @@ class DefaultAppContainer(
 
     override var photoMealExtractor: PhotoMealExtractor? = null
         private set
+        
+    override val feedbackStorageService: FeedbackStorageService by lazy {
+        FeedbackStorageService(context, GsonProvider)
+    }
+    
+    override val healthConnectManager: HealthConnectManager by lazy {
+        HealthConnectManager(context)
+    }
 
     // Store the vision LLM instance and session options for reuse (singleton pattern).
     private var visionLlmInference: LlmInference? = null
@@ -203,6 +215,9 @@ class DefaultAppContainer(
     /**
      * Gets a ready session from the pool or creates a new one if the pool is empty.
      * This is the key to providing a fast, responsive experience for the user.
+     * 
+     * IMPORTANT: Sessions are single-use to avoid token accumulation issues.
+     * Each session is used once and then discarded.
      */
     override suspend fun getReadyVisionSession(): LlmInferenceSession = withContext(Dispatchers.IO) {
         synchronized(visionSessionPool) {
@@ -263,7 +278,7 @@ class DefaultAppContainer(
 
             val llmInferenceOptions = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(visionModelFile.absolutePath)
-                .setMaxTokens(1024)
+                .setMaxTokens(800) // Match the token limit used in initialization
                 .setPreferredBackend(LlmInference.Backend.GPU)
                 .setMaxNumImages(1)
                 .build()

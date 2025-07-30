@@ -22,7 +22,11 @@ private const val TAG = "PhotoMealExtractor"
 /**
  * Exception thrown when the AI model returns a response that cannot be parsed as JSON
  */
-class InvalidJsonResponseException(message: String) : Exception(message)
+class InvalidJsonResponseException(
+    message: String,
+    val errorType: String? = null,
+    val rawResponse: String? = null
+) : Exception(message)
 
 /**
  * A data class matching the JSON structure we expect from the Gemma-3N model.
@@ -144,7 +148,48 @@ class PhotoMealExtractor(
             // Step 3: Run the AI inference. This is the most computationally expensive part.
             lateinit var llmResponse: String
             timings["LLM Inference"] = measureTimeMillis {
-                llmResponse = visionSession.generateResponse()
+                try {
+                    llmResponse = visionSession.generateResponse()
+                } catch (e: Exception) {
+                    val (errorType, errorMessage) = when {
+                        e.message?.contains("Input is too long for the model") == true -> {
+                            Log.e(TAG, "Token limit exceeded. This typically happens when a session is reused.", e)
+                            "TOKEN_LIMIT_EXCEEDED" to "Analysis failed: The model's token limit was exceeded. Please try again."
+                        }
+                        e.message?.contains("OUT_OF_RANGE") == true -> {
+                            Log.e(TAG, "Session is in an invalid state", e)
+                            "SESSION_ERROR" to "Analysis failed: The analysis session is in an invalid state. Please try again."
+                        }
+                        else -> {
+                            Log.e(TAG, "LLM inference failed", e)
+                            "INFERENCE_ERROR" to "Analysis failed: ${e.message ?: "Unknown error"}"
+                        }
+                    }
+                    
+                    // Create error MealAnalysis with timing data collected so far
+                    val totalTime = timings.values.sum()
+                    val performanceMetrics = PerformanceMetrics(
+                        sessionCreation = timings["Session Creation"] ?: 0,
+                        textPromptAdd = timings["Text Prompt Add"] ?: 0,
+                        imageAdd = timings["Image Add"] ?: 0,
+                        llmInference = timings["LLM Inference"] ?: 0,
+                        jsonParsing = 0,
+                        nutrientLookup = 0,
+                        totalTime = totalTime
+                    )
+                    
+                    return@withContext MealAnalysis(
+                        totalCalories = 0,
+                        items = emptyList(),
+                        generatedAt = Instant.now(),
+                        modelName = modelDisplayName,
+                        performanceMetrics = performanceMetrics,
+                        rawAiResponse = null, // No response available for inference errors
+                        isError = true,
+                        errorType = errorType,
+                        errorMessage = errorMessage
+                    )
+                }
             }
             Log.d(TAG, "Raw AI Response: $llmResponse")
 
@@ -175,8 +220,29 @@ class PhotoMealExtractor(
                         foodItems = parseGemmaResponse(llmResponse)
                     }
                 } catch (e: InvalidJsonResponseException) {
-                    // Re-throw with the model name for better error context
-                    throw InvalidJsonResponseException("${modelDisplayName}: ${e.message}")
+                    // Create an error MealAnalysis with all the performance data
+                    val totalTime = timings.values.sum()
+                    val performanceMetrics = PerformanceMetrics(
+                        sessionCreation = timings["Session Creation"] ?: 0,
+                        textPromptAdd = timings["Text Prompt Add"] ?: 0,
+                        imageAdd = timings["Image Add"] ?: 0,
+                        llmInference = timings["LLM Inference"] ?: 0,
+                        jsonParsing = timings["JSON Parsing"] ?: 0,
+                        nutrientLookup = 0, // No nutrient lookup on error
+                        totalTime = totalTime
+                    )
+                    
+                    return@withContext MealAnalysis(
+                        totalCalories = 0,
+                        items = emptyList(),
+                        generatedAt = Instant.now(),
+                        modelName = modelDisplayName,
+                        performanceMetrics = performanceMetrics,
+                        rawAiResponse = e.rawResponse ?: llmResponse,
+                        isError = true,
+                        errorType = e.errorType,
+                        errorMessage = "${modelDisplayName}: ${e.message}"
+                    )
                 }
             }
             Log.i(TAG, "Parsed ${foodItems.size} food items: $foodItems")
@@ -236,7 +302,8 @@ class PhotoMealExtractor(
                 items = analyzedItems,
                 generatedAt = Instant.now(),
                 modelName = modelDisplayName,
-                performanceMetrics = performanceMetrics
+                performanceMetrics = performanceMetrics,
+                rawAiResponse = llmResponse // Store raw response for feedback
             )
         } finally {
             // Step 7: Clean up the session to release memory.
@@ -311,8 +378,24 @@ class PhotoMealExtractor(
         } catch (e: JsonSyntaxException) {
             Log.e(TAG, "Failed to parse JSON response from AI", e)
             Log.e(TAG, "Raw response was: $response")
+            
+            // Determine the specific type of JSON error
+            val errorType = when {
+                response.contains("][") || response.split("\n").count { it.trim().startsWith("[") } > 1 -> {
+                    Log.e(TAG, "AI returned multiple JSON arrays instead of a single array")
+                    "MULTIPLE_JSON_ARRAYS"
+                }
+                response.endsWith("...") || !response.contains("]") -> {
+                    Log.e(TAG, "AI response was truncated or incomplete")
+                    "MALFORMED_JSON"
+                }
+                else -> "INVALID_JSON"
+            }
+            
             throw InvalidJsonResponseException(
-                "Invalid JSON format from AI model. Please try again or switch to a different model."
+                "Invalid JSON format from AI model ($errorType). Please try again or switch to a different model.",
+                errorType = errorType,
+                rawResponse = response
             )
         } catch (e: InvalidJsonResponseException) {
             throw e // Re-throw our custom exception

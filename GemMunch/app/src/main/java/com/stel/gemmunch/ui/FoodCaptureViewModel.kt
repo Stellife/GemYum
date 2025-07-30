@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.time.Instant
 
 private const val TAG = "FoodCaptureViewModel"
 
@@ -31,7 +32,9 @@ sealed interface FoodCaptureState {
     data class Success(
         val originalAnalysis: MealAnalysis,
         val editableItems: List<AnalyzedFoodItem> = originalAnalysis.items,
-        val lastDeletedItem: Pair<Int, AnalyzedFoodItem>? = null // For the "Undo" feature
+        val lastDeletedItem: Pair<Int, AnalyzedFoodItem>? = null, // For the "Undo" feature
+        val shouldNavigateToFeedback: Boolean = false, // Trigger feedback navigation after save
+        val analyzedBitmap: Bitmap? = null // Store the analyzed bitmap for metadata extraction
     ) : FoodCaptureState
     data class Error(val message: String) : FoodCaptureState
 }
@@ -42,6 +45,11 @@ class FoodCaptureViewModel(
 
     private val _uiState = MutableStateFlow<FoodCaptureState>(FoodCaptureState.Idle)
     val uiState: StateFlow<FoodCaptureState> = _uiState.asStateFlow()
+    
+    // Photo metadata that needs to persist across navigation
+    var photoUniqueId: String? = null
+    var photoTimestamp: Instant? = null
+    var isFromGallery: Boolean = false
 
     fun analyzeMealPhoto(bitmap: Bitmap) {
         val extractor = appContainer.photoMealExtractor ?: run {
@@ -55,12 +63,21 @@ class FoodCaptureViewModel(
                 val resultAnalysis = withContext(Dispatchers.IO) {
                     extractor.extract(bitmap)
                 }
-                _uiState.value = FoodCaptureState.Success(resultAnalysis)
-            } catch (e: InvalidJsonResponseException) {
-                Log.e(TAG, "AI model returned invalid JSON response", e)
-                _uiState.value = FoodCaptureState.Error(e.message ?: "AI model error")
+                
+                // Always go to Success state, even for errors, so user can provide feedback
+                _uiState.value = FoodCaptureState.Success(
+                    originalAnalysis = resultAnalysis,
+                    analyzedBitmap = bitmap
+                )
+                
+                // If it's an error, log it
+                if (resultAnalysis.isError) {
+                    Log.e(TAG, "AI analysis failed: ${resultAnalysis.errorType} - ${resultAnalysis.errorMessage}")
+                    Log.e(TAG, "Raw AI response: ${resultAnalysis.rawAiResponse}")
+                }
             } catch (e: Exception) {
-                Log.e(TAG, "Error during meal analysis", e)
+                // Only catch unexpected errors, not InvalidJsonResponseException
+                Log.e(TAG, "Unexpected error during meal analysis", e)
                 val errorMessage = when {
                     e.message?.contains("timeout", ignoreCase = true) == true ->
                         "Analysis timed out. Please try again with a simpler photo."
@@ -134,15 +151,30 @@ class FoodCaptureViewModel(
         val currentState = _uiState.value
         if (currentState is FoodCaptureState.Success) {
             val totalCalories = currentState.editableItems.sumOf { it.calories }
-            // In a real app, you would save this data to a database or repository.
-            // For now, we just show a confirmation toast.
-            Toast.makeText(context, "Meal with $totalCalories kcal saved!", Toast.LENGTH_LONG).show()
+            // Show confirmation toast
+            Toast.makeText(context, "Meal with $totalCalories Calories saved!", Toast.LENGTH_LONG).show()
+            
+            // Reset to idle state after saving
             reset()
+        }
+    }
+    
+    fun onFeedbackNavigated() {
+        // Reset the navigation flag without clearing the analysis
+        val currentState = _uiState.value
+        if (currentState is FoodCaptureState.Success) {
+            _uiState.update {
+                currentState.copy(shouldNavigateToFeedback = false)
+            }
         }
     }
 
     fun reset() {
         _uiState.value = FoodCaptureState.Idle
+        // Also reset photo metadata
+        photoUniqueId = null
+        photoTimestamp = null
+        isFromGallery = false
     }
 }
 

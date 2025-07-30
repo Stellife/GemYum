@@ -6,6 +6,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -21,11 +23,15 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.stel.gemmunch.GemMunchApplication
 import com.stel.gemmunch.agent.MultiDownloadState
+import com.stel.gemmunch.data.HealthConnectManager
 import com.stel.gemmunch.ui.theme.GemMunchTheme
 
 import com.stel.gemmunch.ui.*
 
 class MainActivity : ComponentActivity() {
+    
+    // Health Connect permission launcher - will be initialized in onCreate
+    private lateinit var healthConnectPermissionLauncher: ActivityResultLauncher<Set<String>>
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -37,6 +43,14 @@ class MainActivity : ComponentActivity() {
         }
         val foodCaptureViewModel: FoodCaptureViewModel by viewModels {
             FoodCaptureViewModelFactory(appContainer)
+        }
+        
+        // Initialize Health Connect permission launcher
+        healthConnectPermissionLauncher = registerForActivityResult(
+            appContainer.healthConnectManager.createPermissionRequestContract()
+        ) { grantedPermissions ->
+            // After returning from permission screen, refresh the permission status
+            mainViewModel.refreshHealthConnectPermissions()
         }
 
         setContent {
@@ -56,7 +70,12 @@ class MainActivity : ComponentActivity() {
                             mainViewModel = mainViewModel,
                             foodCaptureViewModel = foodCaptureViewModel,
                             isAiReady = uiState.isAiReady,
-                            initializationProgress = uiState.initializationProgress
+                            initializationProgress = uiState.initializationProgress,
+                            onRequestHealthConnectPermissions = {
+                                healthConnectPermissionLauncher.launch(
+                                    HealthConnectManager.NUTRITION_PERMISSIONS
+                                )
+                            }
                         )
                     } else {
                         // Models not downloaded yet, show setup screen
@@ -77,7 +96,8 @@ fun GemMunchApp(
     mainViewModel: MainViewModel,
     foodCaptureViewModel: FoodCaptureViewModel,
     isAiReady: Boolean,
-    initializationProgress: String?
+    initializationProgress: String?,
+    onRequestHealthConnectPermissions: () -> Unit
 ) {
     val navController = rememberNavController()
 
@@ -88,7 +108,8 @@ fun GemMunchApp(
                 mainViewModel = mainViewModel,
                 navController = navController,
                 isAiReady = isAiReady,
-                initializationProgress = initializationProgress
+                initializationProgress = initializationProgress,
+                onRequestHealthConnectPermissions = onRequestHealthConnectPermissions
             )
         }
         composable("cameraPreview") {

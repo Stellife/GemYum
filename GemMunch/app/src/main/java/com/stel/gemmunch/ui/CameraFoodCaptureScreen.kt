@@ -1,5 +1,6 @@
 package com.stel.gemmunch.ui
 
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -9,8 +10,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,13 +29,22 @@ import com.stel.gemmunch.agent.MultiDownloadState
 import com.stel.gemmunch.utils.VisionModelPreferencesManager
 import com.stel.gemmunch.utils.MediaQualityPreferencesManager
 import com.stel.gemmunch.utils.ImageReasoningPreferencesManager
+import com.stel.gemmunch.data.models.*
+import java.time.ZoneId
+import java.time.Instant
+import java.time.LocalDateTime
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import java.io.File
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.google.accompanist.permissions.shouldShowRationale
 import android.Manifest
+import android.util.Log
+import android.widget.Toast
+
+private const val TAG = "CameraFoodCaptureScreen"
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
@@ -41,13 +53,30 @@ fun CameraFoodCaptureScreen(
     mainViewModel: MainViewModel,
     navController: NavController,
     isAiReady: Boolean,
-    initializationProgress: String?
+    initializationProgress: String?,
+    onRequestHealthConnectPermissions: () -> Unit
 ) {
     val uiState by foodViewModel.uiState.collectAsStateWithLifecycle()
     val mainUiState by mainViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+    
+    // Feedback state for each item
+    var itemFeedbacks by remember { mutableStateOf<Map<Int, ItemFeedback>>(emptyMap()) }
+    
+    // Meal timing state (shared across all items)
+    var mealTiming by remember { mutableStateOf(MealTiming()) }
+    
+    // Use ViewModel to track photo metadata (persists across navigation)
+    var isFromGallery by remember { mutableStateOf(foodViewModel.isFromGallery) }
+    var photoUniqueId by remember { mutableStateOf(foodViewModel.photoUniqueId) }
+    var photoTimestamp by remember { mutableStateOf(foodViewModel.photoTimestamp) }
+    
+    // Log loaded values from ViewModel
+    LaunchedEffect(Unit) {
+        Log.d(TAG, "Loaded from ViewModel - photoUniqueId: ${foodViewModel.photoUniqueId}, isFromGallery: ${foodViewModel.isFromGallery}")
+    }
     
     // Camera permission state
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
@@ -57,12 +86,35 @@ fun CameraFoodCaptureScreen(
     LaunchedEffect(cameraPermissionState.status.isGranted) {
         if (cameraPermissionState.status.isGranted && shouldNavigateToCamera) {
             shouldNavigateToCamera = false
+            isFromGallery = false
+            photoUniqueId = "photo_${System.currentTimeMillis()}_camera"
+            photoTimestamp = Instant.now()
+            // Update ViewModel
+            foodViewModel.isFromGallery = false
+            foodViewModel.photoUniqueId = photoUniqueId
+            foodViewModel.photoTimestamp = photoTimestamp
+            Log.d(TAG, "Setting photoUniqueId for camera: $photoUniqueId")
             navController.navigate("cameraPreview")
         }
     }
 
     val modelFiles = remember(mainUiState.downloadState) {
         (mainUiState.downloadState as? MultiDownloadState.AllComplete)?.files ?: emptyMap()
+    }
+    
+    // Initialize feedback for new items
+    LaunchedEffect(uiState) {
+        val state = uiState
+        if (state is FoodCaptureState.Success) {
+            // Initialize feedback for any new items
+            state.editableItems.forEachIndexed { index, _ ->
+                if (!itemFeedbacks.containsKey(index)) {
+                    itemFeedbacks = itemFeedbacks + (index to ItemFeedback(itemIndex = index))
+                }
+            }
+            // Remove feedback for deleted items
+            itemFeedbacks = itemFeedbacks.filterKeys { it < state.editableItems.size }
+        }
     }
 
     LaunchedEffect(uiState) {
@@ -84,7 +136,18 @@ fun CameraFoodCaptureScreen(
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
         onResult = { uri: Uri? ->
-            uri?.let { navController.navigate("imageCrop/${Uri.encode(it.toString())}") }
+            uri?.let { 
+                isFromGallery = true
+                // Generate unique ID for this photo session
+                photoUniqueId = "photo_${System.currentTimeMillis()}_${uri.hashCode()}"
+                photoTimestamp = extractExifTimestamp(context, uri)
+                // Update ViewModel
+                foodViewModel.isFromGallery = true
+                foodViewModel.photoUniqueId = photoUniqueId
+                foodViewModel.photoTimestamp = photoTimestamp
+                Log.d(TAG, "Setting photoUniqueId for gallery: $photoUniqueId, photoTimestamp: $photoTimestamp")
+                navController.navigate("imageCrop/${Uri.encode(it.toString())}") 
+            }
         }
     )
 
@@ -133,6 +196,17 @@ fun CameraFoodCaptureScreen(
                 }
             }
             
+            // Show Health Connect banner if available but not connected
+            if (mainUiState.healthConnectAvailable && !mainUiState.healthConnectPermissionsGranted) {
+                item {
+                    HealthConnectBanner(
+                        isAvailable = mainUiState.healthConnectAvailable,
+                        hasPermissions = mainUiState.healthConnectPermissionsGranted,
+                        onRequestPermissions = onRequestHealthConnectPermissions
+                    )
+                }
+            }
+            
             when (val state = uiState) {
                 is FoodCaptureState.Idle -> {
                     // Show initialization metrics at the top
@@ -140,6 +214,20 @@ fun CameraFoodCaptureScreen(
                         InitializationMetricsCard(
                             metricsFlow = mainViewModel.initMetricsUpdates
                         )
+                    }
+                    
+                    // Show Health Connect banner if permissions not granted
+                    if (mainUiState.healthConnectAvailable && !mainUiState.healthConnectPermissionsGranted) {
+                        item {
+                            HealthConnectBanner(
+                                isAvailable = mainUiState.healthConnectAvailable,
+                                hasPermissions = mainUiState.healthConnectPermissionsGranted,
+                                onRequestPermissions = {
+                                    // TODO: Implement permission request
+                                    Log.d(TAG, "Health Connect permission request triggered")
+                                }
+                            )
+                        }
                     }
                     
                     item {
@@ -166,6 +254,14 @@ fun CameraFoodCaptureScreen(
                         Button(
                             onClick = { 
                                 if (cameraPermissionState.status.isGranted) {
+                                    isFromGallery = false
+                                    photoUniqueId = "photo_${System.currentTimeMillis()}_camera"
+                                    photoTimestamp = Instant.now()
+                                    // Update ViewModel
+                                    foodViewModel.isFromGallery = false
+                                    foodViewModel.photoUniqueId = photoUniqueId
+                                    foodViewModel.photoTimestamp = photoTimestamp
+                                    Log.d(TAG, "Setting photoUniqueId for camera button: $photoUniqueId")
                                     navController.navigate("cameraPreview")
                                 } else {
                                     shouldNavigateToCamera = true
@@ -224,7 +320,117 @@ fun CameraFoodCaptureScreen(
                     }
                 }
                 is FoodCaptureState.Success -> {
-                    if (state.editableItems.isEmpty()) {
+                    // Check if this is an error analysis
+                    if (state.originalAnalysis.isError) {
+                        // Show error card with details
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            Icons.Default.Warning,
+                                            contentDescription = "Error",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            "Analysis Failed",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    
+                                    Text(
+                                        state.originalAnalysis.errorMessage ?: "Failed to analyze the image",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    
+                                    // Show error type for debugging
+                                    state.originalAnalysis.errorType?.let { errorType ->
+                                        Text(
+                                            "Error type: $errorType",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
+                                        )
+                                    }
+                                    
+                                    // Show truncated raw response if available
+                                    state.originalAnalysis.rawAiResponse?.let { raw ->
+                                        Text(
+                                            "AI Response (truncated):",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            raw.take(200) + if (raw.length > 200) "..." else "",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Still show performance metrics if available
+                        state.originalAnalysis.performanceMetrics?.let { metrics ->
+                            item {
+                                PerformanceMetricsCard(metrics)
+                            }
+                        }
+                        
+                        // Allow user to provide feedback about the error
+                        item {
+                            Card(modifier = Modifier.fillMaxWidth()) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        "Help us improve by providing feedback about this error",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                        OutlinedButton(onClick = foodViewModel::reset) { 
+                                            Text("Try Again") 
+                                        }
+                                        Button(
+                                            onClick = {
+                                                coroutineScope.launch {
+                                                    // Save error feedback
+                                                    val feedbackService = mainViewModel.appContainer.feedbackStorageService
+                                                    val errorFeedback = buildErrorFeedbackDocument(
+                                                        mealAnalysis = state.originalAnalysis,
+                                                        mealTiming = mealTiming,
+                                                        isFromGallery = isFromGallery,
+                                                        photoUniqueId = photoUniqueId,
+                                                        photoTimestamp = photoTimestamp,
+                                                        analyzedBitmap = state.analyzedBitmap
+                                                    )
+                                                    val documentId = feedbackService.storeFeedback(errorFeedback)
+                                                    if (documentId != null) {
+                                                        Log.i("FeedbackScreen", "Stored error feedback: ${state.originalAnalysis.errorType}")
+                                                        snackbarHostState.showSnackbar("Error feedback saved. Thank you!")
+                                                    }
+                                                    foodViewModel.reset()
+                                                }
+                                            }
+                                        ) {
+                                            Text("Save Error Feedback")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                    } else if (state.editableItems.isEmpty()) {
                         item {
                             Text("Could not identify food in the photo.", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
                         }
@@ -247,12 +453,38 @@ fun CameraFoodCaptureScreen(
                             }
                         }
                         
-                        // Food items
+                        // Food items with inline feedback
                         itemsIndexed(state.editableItems, key = { _, item -> item.hashCode() }) { index, item ->
-                            EditableFoodItem(
-                                item = item,
-                                onItemChanged = { updatedItem -> foodViewModel.updateItem(index, updatedItem) },
-                                onItemDeleted = { foodViewModel.deleteItem(index) }
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                EditableFoodItem(
+                                    item = item,
+                                    onItemChanged = { updatedItem -> foodViewModel.updateItem(index, updatedItem) },
+                                    onItemDeleted = { 
+                                        foodViewModel.deleteItem(index)
+                                        // Also remove the feedback for this item
+                                        itemFeedbacks = itemFeedbacks - index
+                                    }
+                                )
+                                
+                                // Inline feedback card for this item
+                                InlineFeedbackCard(
+                                    item = item,
+                                    itemIndex = index,
+                                    feedback = itemFeedbacks[index] ?: ItemFeedback(itemIndex = index),
+                                    onFeedbackUpdate = { updatedFeedback ->
+                                        itemFeedbacks = itemFeedbacks + (index to updatedFeedback)
+                                    }
+                                )
+                            }
+                        }
+                        
+                        // Meal timing card (appears once, before save buttons)
+                        item {
+                            MealTimingCard(
+                                isFromGallery = isFromGallery,
+                                photoTimestamp = photoTimestamp,
+                                mealTiming = mealTiming,
+                                onTimingUpdate = { mealTiming = it }
                             )
                         }
                         
@@ -267,10 +499,97 @@ fun CameraFoodCaptureScreen(
                                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                     OutlinedButton(onClick = foodViewModel::reset) { Text("Cancel") }
                                     Button(
-                                        onClick = { foodViewModel.saveMeal(context) }, 
+                                        onClick = { 
+                                            coroutineScope.launch {
+                                                // Save feedback for all items
+                                                val feedbackService = mainViewModel.appContainer.feedbackStorageService
+                                                
+                                                state.editableItems.forEachIndexed { index, item ->
+                                                    val feedback = itemFeedbacks[index]
+                                                    if (feedback != null) {
+                                                        // Debug logging
+                                                        Log.d(TAG, "Building feedback document with photoUniqueId: $photoUniqueId")
+                                                        
+                                                        // Calculate meal time first
+                                                        val mealDateTime = when (mealTiming.option) {
+                                                            MealTimingOption.USE_PHOTO_TIME -> {
+                                                                when {
+                                                                    !isFromGallery -> Instant.now()
+                                                                    photoTimestamp != null -> photoTimestamp
+                                                                    else -> Instant.now()
+                                                                }
+                                                            }
+                                                            MealTimingOption.CUSTOM_TIME -> {
+                                                                mealTiming.customDateTime?.atZone(ZoneId.systemDefault())?.toInstant() ?: Instant.now()
+                                                            }
+                                                        }
+                                                        
+                                                        // Convert to full feedback document
+                                                        val feedbackDoc = buildFeedbackDocument(
+                                                            mealAnalysis = state.originalAnalysis,
+                                                            item = item,
+                                                            itemFeedback = feedback,
+                                                            totalItems = state.editableItems.size,
+                                                            mealTiming = mealTiming,
+                                                            isFromGallery = isFromGallery,
+                                                            photoUniqueId = photoUniqueId,
+                                                            photoTimestamp = photoTimestamp,
+                                                            analyzedBitmap = state.analyzedBitmap
+                                                        )
+                                                        val documentId = feedbackService.storeFeedback(feedbackDoc)
+                                                        if (documentId != null) {
+                                                            Log.i("FeedbackScreen", "Stored feedback for ${item.foodName}: score=${feedback.overallScore}")
+                                                            
+                                                            // Write to Health Connect if requested
+                                                            if (feedback.healthConnectWriteChoice == HealthConnectWriteChoice.WRITE_COMPUTED_VALUES ||
+                                                                feedback.healthConnectWriteChoice == HealthConnectWriteChoice.WRITE_USER_VALUES) {
+                                                                
+                                                                val healthConnect = mainViewModel.appContainer.healthConnectManager
+                                                                if (healthConnect.isHealthConnectAvailable() && 
+                                                                    mainUiState.healthConnectPermissionsGranted) {
+                                                                    
+                                                                    val itemsToWrite = if (feedback.healthConnectWriteChoice == HealthConnectWriteChoice.WRITE_USER_VALUES && 
+                                                                        feedback.providingCorrections && 
+                                                                        feedback.correctedValues.isNotEmpty()) {
+                                                                        // Create a modified item with user-provided values
+                                                                        listOf(item.copy(
+                                                                            calories = feedback.correctedValues["Calories"]?.toIntOrNull() ?: item.calories,
+                                                                            protein = feedback.correctedValues["Protein"]?.toDoubleOrNull() ?: item.protein,
+                                                                            totalFat = feedback.correctedValues["Total Fat"]?.toDoubleOrNull() ?: item.totalFat,
+                                                                            totalCarbs = feedback.correctedValues["Carbohydrates"]?.toDoubleOrNull() ?: item.totalCarbs,
+                                                                            sodium = feedback.correctedValues["Sodium"]?.toDoubleOrNull() ?: item.sodium
+                                                                        ))
+                                                                    } else {
+                                                                        listOf(item)
+                                                                    }
+                                                                    
+                                                                    val success = healthConnect.writeNutritionRecords(
+                                                                        items = itemsToWrite,
+                                                                        mealDateTime = mealDateTime ?: Instant.now()
+                                                                    )
+                                                                    
+                                                                    if (success) {
+                                                                        Log.i("FeedbackScreen", "Successfully wrote ${item.foodName} to Health Connect")
+                                                                    } else {
+                                                                        Log.e("FeedbackScreen", "Failed to write ${item.foodName} to Health Connect")
+                                                                    }
+                                                                } else {
+                                                                    Log.w("FeedbackScreen", "Health Connect not available or permissions not granted")
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                
+                                                // Save the meal
+                                                foodViewModel.saveMeal(context)
+                                            }
+                                        }, 
                                         enabled = state.editableItems.isNotEmpty()
                                     ) { 
-                                        Text("Save Meal") 
+                                        Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Save to Records") 
                                     }
                                 }
                             }
@@ -287,6 +606,174 @@ fun CameraFoodCaptureScreen(
                 }
             }
         }
+    }
+    
+}
+// Helper function to build feedback document
+private fun buildFeedbackDocument(
+    mealAnalysis: MealAnalysis,
+    item: AnalyzedFoodItem,
+    itemFeedback: ItemFeedback,
+    totalItems: Int,
+    mealTiming: MealTiming,
+    isFromGallery: Boolean,
+    photoUniqueId: String?,
+    photoTimestamp: Instant?,
+    analyzedBitmap: Bitmap?
+): MealAnalysisFeedback {
+    // Determine meal time and source
+    val (mealDateTime, mealDateTimeSource) = when (mealTiming.option) {
+        MealTimingOption.USE_PHOTO_TIME -> {
+            when {
+                !isFromGallery -> Instant.now() to "photo_capture_time"
+                photoTimestamp != null -> photoTimestamp to "photo_metadata"
+                else -> Instant.now() to "error_loading_time"
+            }
+        }
+        MealTimingOption.CUSTOM_TIME -> {
+            val customInstant = mealTiming.customDateTime?.atZone(ZoneId.systemDefault())?.toInstant() ?: Instant.now()
+            customInstant to "user_provided"
+        }
+    }
+    return MealAnalysisFeedback(
+        insightGeneratedDate = mealAnalysis.generatedAt,
+        mealDateTime = mealDateTime,
+        mealDateTimeSource = mealDateTimeSource,
+        mealDateTimeZone = ZoneId.systemDefault().toString(),
+        modelDetails = ModelDetails(
+            modelName = mealAnalysis.modelName,
+            mediaQualitySize = MediaQualityPreferencesManager.getSelectedQuality().displayName,
+            imageAnalysisMode = ImageReasoningPreferencesManager.getSelectedMode().displayName,
+            promptText = getPromptTextForMode()
+        ),
+        performanceMetrics = com.stel.gemmunch.data.models.PerformanceMetrics(
+            totalAnalysisTime = mealAnalysis.performanceMetrics?.totalTime ?: 0,
+            sessionCreationTime = mealAnalysis.performanceMetrics?.sessionCreation ?: 0,
+            textPromptAddTime = mealAnalysis.performanceMetrics?.textPromptAdd ?: 0,
+            imageAddTime = mealAnalysis.performanceMetrics?.imageAdd ?: 0,
+            llmInferenceTime = mealAnalysis.performanceMetrics?.llmInference ?: 0,
+            jsonParsingTime = mealAnalysis.performanceMetrics?.jsonParsing ?: 0,
+            nutrientLookupTime = mealAnalysis.performanceMetrics?.nutrientLookup ?: 0
+        ),
+        modelReturnStatus = if (totalItems > 0) ModelReturnStatus.SUCCESS else ModelReturnStatus.FAILED_NO_ITEMS_IDENTIFIED,
+        aiResponseRaw = mealAnalysis.rawAiResponse ?: "No raw response available",
+        aiResponsePerItem = listOf(
+            FoodItemAnalysis(
+                foodName = item.foodName,
+                quantity = item.quantity,
+                unit = item.unit,
+                nutritionalInfo = NutritionalInfo(
+                    calories = item.calories,
+                    caloriesDV = calculateDailyValue(item.calories.toDouble(), 2000.0),
+                    protein = item.protein,
+                    proteinDV = item.protein?.let { calculateDailyValue(it, 50.0) },
+                    totalFat = item.totalFat,
+                    totalFatDV = item.totalFat?.let { calculateDailyValue(it, 78.0) },
+                    saturatedFat = item.saturatedFat,
+                    saturatedFatDV = item.saturatedFat?.let { calculateDailyValue(it, 20.0) },
+                    cholesterol = item.cholesterol,
+                    cholesterolDV = item.cholesterol?.let { calculateDailyValue(it, 300.0) },
+                    sodium = item.sodium,
+                    sodiumDV = item.sodium?.let { calculateDailyValue(it, 2300.0) },
+                    totalCarbs = item.totalCarbs,
+                    totalCarbsDV = item.totalCarbs?.let { calculateDailyValue(it, 275.0) },
+                    dietaryFiber = item.dietaryFiber,
+                    dietaryFiberDV = item.dietaryFiber?.let { calculateDailyValue(it, 28.0) },
+                    sugars = item.sugars,
+                    glycemicIndex = item.glycemicIndex,
+                    glycemicLoad = item.glycemicLoad
+                )
+            )
+        ),
+        aiResponseTotal = null, // Single item feedback
+        humanScore = itemFeedback.overallScore,
+        humanReportedErrors = itemFeedback.selectedErrors.toList(),
+        humanErrorNotes = itemFeedback.errorDetails.values.joinToString("\n").takeIf { it.isNotBlank() },
+        restaurantMealDetails = if (itemFeedback.restaurantOrMfgName.isNotBlank() || itemFeedback.mealDescription.isNotBlank()) {
+            RestaurantMealInfo(
+                isRestaurant = itemFeedback.restaurantOrMfgName.isNotBlank(),
+                restaurantName = itemFeedback.restaurantOrMfgName.takeIf { it.isNotBlank() },
+                mealDescription = itemFeedback.mealDescription.takeIf { it.isNotBlank() }
+            )
+        } else null,
+        humanCorrectedNutrition = if (itemFeedback.providingCorrections && itemFeedback.correctedValues.isNotEmpty()) {
+            CorrectedNutritionInfo(
+                nutritionalValuePerItem = itemFeedback.correctedValues.mapValues { it.value.toDoubleOrNull() ?: 0.0 },
+                informationSource = itemFeedback.nutritionSource.takeIf { it.isNotBlank() }
+            )
+        } else null,
+        healthConnectWriteIntention = itemFeedback.healthConnectWriteChoice,
+        imageMetadata = ImageMetadata(
+            originalImagePath = null, // Not available in current implementation
+            imageWidth = analyzedBitmap?.width ?: 0,
+            imageHeight = analyzedBitmap?.height ?: 0,
+            imageSizeBytes = analyzedBitmap?.allocationByteCount?.toLong(),
+            wasCropped = false, // Not tracked in current implementation
+            cropCoordinates = null,
+            exifDateTime = photoTimestamp,
+            imageConfig = analyzedBitmap?.config?.name ?: "UNKNOWN",
+            hasAlpha = analyzedBitmap?.hasAlpha() ?: false
+        ),
+        photoUniqueId = photoUniqueId,
+        wasWrittenToHealthConnect = itemFeedback.healthConnectWriteChoice != null && 
+            itemFeedback.healthConnectWriteChoice != HealthConnectWriteChoice.DO_NOT_WRITE
+    )
+}
+
+// Helper function to get prompt text based on reasoning mode
+private fun getPromptTextForMode(): String {
+    return when (ImageReasoningPreferencesManager.getSelectedMode()) {
+        ImageReasoningPreferencesManager.ImageReasoningMode.REASONING -> 
+            """Analyze the food in this image step by step. Show your reasoning, then provide the JSON.
+
+Step 1: Describe the main visual elements:
+- Shape and structure of the food
+- Colors you observe
+- Any visible ingredients or toppings
+- How the food is arranged or presented
+
+Step 2: Based on your observations, identify the food items.
+Think carefully:
+- Tacos have folded tortillas with exposed fillings on top
+- Burritos are fully wrapped cylinders
+- Burgers have round buns with patties between them
+
+Step 3: Provide your final answer as a JSON array at the end.
+
+Example response:
+"I see three folded corn tortillas arranged in a standing V-shape. The tortillas appear crispy and golden. Visible fillings include ground meat (appears to be seasoned beef), shredded lettuce, diced tomatoes, and shredded cheese on top. The arrangement and exposed fillings clearly indicate these are hard-shell tacos.
+
+Final answer:
+[{"food": "taco", "quantity": 3, "unit": "item", "confidence": 0.9}]"
+
+Your analysis:"""
+        ImageReasoningPreferencesManager.ImageReasoningMode.SINGLE_SHOT -> 
+            """Analyze the food items in the image carefully and systematically.
+
+Think step by step:
+1. What is the main food item visible? Look for shape, color, and structure.
+2. Are there any secondary items or condiments?
+3. What quantity can you count or estimate?
+
+Common food identifications:
+- Tacos: folded corn/flour tortillas with fillings visible on top
+- Burritos: fully wrapped cylindrical tortillas
+- Burgers: round buns with patties between them
+- Pizza: flat round/square base with toppings
+
+Instructions:
+- Focus on what you actually see, not what might be common combinations
+- If you see folded tortillas with exposed fillings, they are likely tacos
+- Count individual items when possible
+- Output ONLY a JSON array with your final answer
+
+Example outputs:
+[{"food": "taco", "quantity": 3, "unit": "item", "confidence": 0.85}]
+[{"food": "burger", "quantity": 1, "unit": "item", "confidence": 0.9}]
+
+Valid units: item, piece, slice, cup, serving, tablespoon, teaspoon, grams, ounces
+
+JSON output:"""
     }
 }
 
@@ -529,6 +1016,35 @@ private fun calculateDailyValue(amount: Double, dailyValue: Double): Int {
     return ((amount / dailyValue) * 100).toInt()
 }
 
+private fun extractExifTimestamp(context: android.content.Context, uri: Uri): Instant? {
+    return try {
+        val inputStream = context.contentResolver.openInputStream(uri)
+        inputStream?.use { stream ->
+            val exif = android.media.ExifInterface(stream)
+            
+            // Try to get datetime from EXIF
+            val dateTimeOriginal = exif.getAttribute(android.media.ExifInterface.TAG_DATETIME_ORIGINAL)
+            val dateTime = exif.getAttribute(android.media.ExifInterface.TAG_DATETIME)
+            val dateTimeDigitized = exif.getAttribute(android.media.ExifInterface.TAG_DATETIME_DIGITIZED)
+            
+            val dateString = dateTimeOriginal ?: dateTimeDigitized ?: dateTime
+            
+            if (dateString != null) {
+                // EXIF date format is "yyyy:MM:dd HH:mm:ss"
+                val formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss")
+                val localDateTime = java.time.LocalDateTime.parse(dateString, formatter)
+                // Convert to Instant assuming local timezone (could be improved with GPS data)
+                localDateTime.atZone(java.time.ZoneId.systemDefault()).toInstant()
+            } else {
+                null
+            }
+        }
+    } catch (e: Exception) {
+        Log.e(TAG, "Failed to extract EXIF timestamp from URI", e)
+        null
+    }
+}
+
 // Extension function to format doubles
 fun Double.format(decimals: Int): String = "%.${decimals}f".format(this)
 
@@ -588,7 +1104,7 @@ fun VisionModelSelectionCard(
                     onValueChange = {},
                     readOnly = true,
                     trailingIcon = { Icon(Icons.Default.ArrowDropDown, "Dropdown") },
-                    modifier = Modifier.fillMaxWidth().menuAnchor()
+                    modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable)
                 )
                 ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     availableModels.forEach { (modelKey, displayName) ->
@@ -648,7 +1164,7 @@ fun MediaQualitySelectionCard() {
                     onValueChange = {},
                     readOnly = true,
                     trailingIcon = { Icon(Icons.Default.ArrowDropDown, "Dropdown") },
-                    modifier = Modifier.fillMaxWidth().menuAnchor()
+                    modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable)
                 )
                 ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     MediaQualityPreferencesManager.MediaQuality.values().forEach { quality ->
@@ -705,7 +1221,7 @@ fun ImageReasoningModeCard() {
                     onValueChange = {},
                     readOnly = true,
                     trailingIcon = { Icon(Icons.Default.ArrowDropDown, "Dropdown") },
-                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
                     supportingText = { Text(selectedMode.description) }
                 )
                 ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -757,4 +1273,90 @@ fun ImageReasoningModeCard() {
             }
         }
     }
+}
+
+// Helper function to build error feedback document
+private fun buildErrorFeedbackDocument(
+    mealAnalysis: MealAnalysis,
+    mealTiming: MealTiming,
+    isFromGallery: Boolean,
+    photoUniqueId: String?,
+    photoTimestamp: Instant?,
+    analyzedBitmap: Bitmap?
+): MealAnalysisFeedback {
+    // Calculate meal time
+    val mealDateTime = when (mealTiming.option) {
+        MealTimingOption.USE_PHOTO_TIME -> {
+            when {
+                !isFromGallery -> Instant.now()
+                photoTimestamp != null -> photoTimestamp
+                else -> Instant.now()
+            }
+        }
+        MealTimingOption.CUSTOM_TIME -> {
+            mealTiming.customDateTime?.atZone(ZoneId.systemDefault())?.toInstant() ?: Instant.now()
+        }
+    }
+    
+    // Determine the model return status based on error type
+    val modelStatus = when (mealAnalysis.errorType) {
+        "MULTIPLE_JSON_ARRAYS" -> ModelReturnStatus.FAILED_MULTIPLE_JSON_ARRAYS
+        "MALFORMED_JSON" -> ModelReturnStatus.FAILED_MALFORMED_JSON
+        "TOKEN_LIMIT_EXCEEDED" -> ModelReturnStatus.FAILED_TOKEN_LIMIT_EXCEEDED
+        "SESSION_ERROR" -> ModelReturnStatus.FAILED_SESSION_ERROR
+        "INFERENCE_ERROR" -> ModelReturnStatus.FAILED_INFERENCE_ERROR
+        else -> ModelReturnStatus.FAILED_NOT_JSON
+    }
+    
+    return MealAnalysisFeedback(
+        insightGeneratedDate = mealAnalysis.generatedAt,
+        modelDetails = ModelDetails(
+            modelName = mealAnalysis.modelName,
+            mediaQualitySize = MediaQualityPreferencesManager.getSelectedQuality().displayName,
+            imageAnalysisMode = ImageReasoningPreferencesManager.getSelectedMode().displayName,
+            promptText = getPromptTextForMode()
+        ),
+        performanceMetrics = mealAnalysis.performanceMetrics?.let {
+            PerformanceMetrics(
+                totalAnalysisTime = it.totalTime,
+                sessionCreationTime = it.sessionCreation,
+                textPromptAddTime = it.textPromptAdd,
+                imageAddTime = it.imageAdd,
+                llmInferenceTime = it.llmInference,
+                jsonParsingTime = it.jsonParsing,
+                nutrientLookupTime = it.nutrientLookup
+            )
+        } ?: PerformanceMetrics(0, 0, 0, 0, 0, 0, 0),
+        mealDateTime = mealDateTime,
+        mealDateTimeSource = when {
+            !isFromGallery -> "photo_capture_time"
+            photoTimestamp != null -> "photo_metadata"
+            mealTiming.option == MealTimingOption.CUSTOM_TIME -> "user_provided"
+            else -> "error_loading_time"
+        },
+        mealDateTimeZone = ZoneId.systemDefault().id,
+        modelReturnStatus = modelStatus,
+        aiResponseRaw = mealAnalysis.rawAiResponse ?: "",
+        aiResponsePerItem = emptyList(), // No items for errors
+        aiResponseTotal = null,
+        humanScore = 0, // Automatic 0 score for errors
+        humanReportedErrors = listOf(ErrorType.FOOD_COMPLETELY_WRONG), // Default error type
+        humanErrorNotes = "AI failed to parse response: ${mealAnalysis.errorMessage}",
+        restaurantMealDetails = null,
+        humanCorrectedNutrition = null,
+        healthConnectWriteIntention = HealthConnectWriteChoice.DO_NOT_WRITE, // Don't write errors
+        wasWrittenToHealthConnect = false,
+        imageMetadata = ImageMetadata(
+            originalImagePath = null,
+            imageWidth = analyzedBitmap?.width ?: 0,
+            imageHeight = analyzedBitmap?.height ?: 0,
+            imageSizeBytes = analyzedBitmap?.allocationByteCount?.toLong(),
+            wasCropped = false,
+            cropCoordinates = null,
+            exifDateTime = photoTimestamp,
+            imageConfig = analyzedBitmap?.config?.name ?: "UNKNOWN",
+            hasAlpha = analyzedBitmap?.hasAlpha() ?: false
+        ),
+        photoUniqueId = photoUniqueId
+    )
 }

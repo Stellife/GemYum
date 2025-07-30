@@ -101,6 +101,10 @@ dependencies {
     // Utils
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.gson)
+    
+    // Health Connect
+    implementation(libs.androidx.health.connect)
+    implementation(libs.accompanist.permissions)
 
     // ---- Testing ----
     testImplementation(libs.junit)

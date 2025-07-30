@@ -26,12 +26,14 @@ data class MainUiState(
     val downloadState: MultiDownloadState = MultiDownloadState.Checking,
     val isAiReady: Boolean = false,
     val initializationProgress: String? = null,
-    val initializationReport: String? = null
+    val initializationReport: String? = null,
+    val healthConnectAvailable: Boolean = false,
+    val healthConnectPermissionsGranted: Boolean = false
 )
 
 class MainViewModel(
     private val application: Application,
-    private val appContainer: AppContainer
+    val appContainer: AppContainer
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(MainUiState())
@@ -48,6 +50,11 @@ class MainViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             initMetrics.startPhase("ViewModelInitialization")
             initializeAiComponents()
+        }
+        
+        // Check Health Connect status in parallel
+        viewModelScope.launch {
+            checkHealthConnectStatus()
         }
     }
 
@@ -161,6 +168,34 @@ class MainViewModel(
             isAiReady = false,
             initializationProgress = "AI not initialized - manual configuration required"
         ) }
+    }
+    
+    /**
+     * Checks Health Connect availability and permissions status.
+     */
+    private suspend fun checkHealthConnectStatus() {
+        val healthConnect = appContainer.healthConnectManager
+        val isAvailable = healthConnect.isHealthConnectAvailable()
+        
+        _uiState.update { it.copy(healthConnectAvailable = isAvailable) }
+        
+        if (isAvailable) {
+            val hasPermissions = healthConnect.hasNutritionPermissions()
+            _uiState.update { it.copy(healthConnectPermissionsGranted = hasPermissions) }
+            
+            Log.i(TAG, "Health Connect available: $isAvailable, permissions granted: $hasPermissions")
+        } else {
+            Log.i(TAG, "Health Connect not available on this device")
+        }
+    }
+    
+    /**
+     * Re-checks Health Connect permissions after a permission request.
+     */
+    fun refreshHealthConnectPermissions() {
+        viewModelScope.launch {
+            checkHealthConnectStatus()
+        }
     }
 }
 
