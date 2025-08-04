@@ -39,7 +39,7 @@ class MainViewModel(
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
     
-    private val initMetrics: InitializationMetrics = 
+    val initMetrics: InitializationMetrics = 
         (application as com.stel.gemmunch.GemMunchApplication).initMetrics
     
     // Expose live metrics updates
@@ -86,6 +86,9 @@ class MainViewModel(
                 initMetrics.startSubPhase("ViewModelInitialization", "InitializeAppContainer")
                 appContainer.initialize(modelFiles)
                 initMetrics.endSubPhase("ViewModelInitialization", "InitializeAppContainer")
+                
+                // Start continuous pre-warming for instant session availability
+                appContainer.startContinuousPrewarming()
                 
                 initMetrics.endPhase("ViewModelInitialization")
                 

@@ -9,6 +9,7 @@ import com.stel.gemmunch.AppContainer
 import com.stel.gemmunch.agent.AnalyzedFoodItem
 import com.stel.gemmunch.agent.InvalidJsonResponseException
 import com.stel.gemmunch.agent.MealAnalysis
+import com.stel.gemmunch.data.models.AnalysisProgress
 import com.stel.gemmunch.utils.VisionModelPreferencesManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +26,7 @@ private const val TAG = "FoodCaptureViewModel"
 /** Defines the different states for the food capture UI screen. */
 sealed interface FoodCaptureState {
     data object Idle : FoodCaptureState
-    data object Loading : FoodCaptureState
+    data class Loading(val progress: AnalysisProgress = AnalysisProgress()) : FoodCaptureState
     data object SwitchingModel : FoodCaptureState
     data class Success(
         val originalAnalysis: MealAnalysis,
@@ -64,10 +65,17 @@ class FoodCaptureViewModel(
         }
 
         viewModelScope.launch {
-            _uiState.value = FoodCaptureState.Loading
+            _uiState.value = FoodCaptureState.Loading()
             try {
                 val resultAnalysis = withContext(Dispatchers.IO) {
-                    extractor.extract(bitmap, _contextText.value.takeIf { it.isNotBlank() })
+                    extractor.extract(
+                        bitmap = bitmap, 
+                        userContext = _contextText.value.takeIf { it.isNotBlank() },
+                        onProgress = { progress ->
+                            // Update UI with progress
+                            _uiState.value = FoodCaptureState.Loading(progress)
+                        }
+                    )
                 }
                 
                 // Always go to Success state, even for errors, so user can provide feedback

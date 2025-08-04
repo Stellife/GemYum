@@ -4,9 +4,12 @@ import android.graphics.Bitmap
 import android.util.Log
 import com.stel.gemmunch.AppContainer
 import com.stel.gemmunch.data.models.EnhancedNutrientDbHelper
+import com.stel.gemmunch.data.models.AnalysisProgress
+import com.stel.gemmunch.data.models.AnalysisStep
 import com.stel.gemmunch.utils.GsonProvider
 import com.stel.gemmunch.utils.VisionModelPreferencesManager
 import com.stel.gemmunch.utils.ImageReasoningPreferencesManager
+import com.stel.gemmunch.utils.ErrorUtils
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
@@ -14,12 +17,10 @@ import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import java.time.Instant
 import kotlin.system.measureTimeMillis
+import java.security.MessageDigest
 
 private const val TAG = "PhotoMealExtractor"
 
@@ -117,18 +118,36 @@ class PhotoMealExtractor(
     JSON output:
     """.trimIndent()
 
-    suspend fun extract(bitmap: Bitmap, userContext: String? = null): MealAnalysis = withContext(Dispatchers.IO) {
+    suspend fun extract(
+        bitmap: Bitmap, 
+        userContext: String? = null,
+        onProgress: ((AnalysisProgress) -> Unit)? = null
+    ): MealAnalysis = withContext(Dispatchers.IO) {
         val modelKey = VisionModelPreferencesManager.getSelectedVisionModel()
         val modelDisplayName = VisionModelPreferencesManager.getVisionModelDisplayName(modelKey)
+        
+        // Calculate image hash for debugging duplicate analyses
+        val imageHash = calculateImageHash(bitmap)
         Log.i(TAG, "Starting meal photo analysis with $modelDisplayName...")
+        Log.i(TAG, "Image hash: $imageHash (size: ${bitmap.width}x${bitmap.height})")
 
         val timings = mutableMapOf<String, Long>()
         lateinit var visionSession: LlmInferenceSession
-
+        
+        // Initialize progress tracking
+        var progress = AnalysisProgress()
+        
         // Step 1: Get a pre-warmed, high-performance session from the AppContainer.
+        progress = progress.updateStep("Preparing AI Session", AnalysisStep.StepStatus.IN_PROGRESS)
+        onProgress?.invoke(progress)
+        
         timings["Session Creation"] = measureTimeMillis {
             visionSession = appContainer.getReadyVisionSession()
+            Log.d(TAG, "Got fresh AI session for analysis (image hash: $imageHash)")
         }
+        
+        progress = progress.updateStep("Preparing AI Session", AnalysisStep.StepStatus.COMPLETED, timings["Session Creation"])
+        onProgress?.invoke(progress)
 
         try {
             // Step 2: Add the text prompt and the image to the session.
@@ -141,6 +160,10 @@ class PhotoMealExtractor(
             // Build the final prompt with optional user context
             val promptToUse = buildPromptWithContext(basePrompt, userContext)
             
+            // Step 2: Add context/prompt
+            progress = progress.updateStep("Adding Context", AnalysisStep.StepStatus.IN_PROGRESS)
+            onProgress?.invoke(progress)
+            
             timings["Text Prompt Add"] = measureTimeMillis {
                 Log.d(TAG, "Adding text prompt to session...")
                 Log.d(TAG, "Reasoning mode: ${reasoningMode.displayName}")
@@ -151,6 +174,14 @@ class PhotoMealExtractor(
                 visionSession.addQueryChunk(promptToUse)
                 Log.d(TAG, "Text prompt added successfully")
             }
+            
+            progress = progress.updateStep("Adding Context", AnalysisStep.StepStatus.COMPLETED, timings["Text Prompt Add"])
+            onProgress?.invoke(progress)
+            
+            // Step 3: Process image
+            progress = progress.updateStep("Processing Image", AnalysisStep.StepStatus.IN_PROGRESS)
+            onProgress?.invoke(progress)
+            
             timings["Image Add"] = measureTimeMillis {
                 Log.d(TAG, "Adding image to session...")
                 
@@ -163,65 +194,46 @@ class PhotoMealExtractor(
                 visionSession.addImage(mpImage)
                 Log.d(TAG, "Image added successfully")
             }
+            
+            progress = progress.updateStep("Processing Image", AnalysisStep.StepStatus.COMPLETED, timings["Image Add"])
+            onProgress?.invoke(progress)
 
-            // Step 3: Run the AI inference. This is the most computationally expensive part.
+            // Step 4: Run the AI inference. This is the most computationally expensive part.
             lateinit var llmResponse: String
+            progress = progress.updateStep("AI Analysis", AnalysisStep.StepStatus.IN_PROGRESS)
+            onProgress?.invoke(progress)
+            
             timings["LLM Inference"] = measureTimeMillis {
                 try {
                     Log.i(TAG, "🚀 Starting AI inference with optimized acceleration...")
                     Log.i(TAG, "📊 Context: ${userContext?.length ?: 0} chars, Image: ${bitmap.width}x${bitmap.height}")
                     Log.i(TAG, "🎯 Model: $modelDisplayName, Mode: ${reasoningMode.displayName}")
                     
-                    // Log every 10 seconds during inference to show it's working
                     val inferenceStartTime = System.currentTimeMillis()
-                    val progressJob = GlobalScope.launch {
-                        var elapsedSeconds = 0
-                        while (isActive) {
-                            delay(10000) // Every 10 seconds
-                            elapsedSeconds += 10
-                            val currentTime = System.currentTimeMillis()
-                            val actualElapsed = (currentTime - inferenceStartTime) / 1000
-                            Log.i(TAG, "🤖 AI still processing... ${actualElapsed}s elapsed (expected: ${elapsedSeconds}s)")
-                            
-                            // Add performance context based on elapsed time
-                            when {
-                                actualElapsed > 60 -> Log.w(TAG, "⚠️ Inference taking longer than expected - model may be running on CPU fallback")
-                                actualElapsed > 30 -> Log.i(TAG, "💡 This is normal for complex vision-language analysis")
-                                actualElapsed > 15 -> Log.i(TAG, "⏳ Model is working hard on detailed analysis...")
-                            }
-                        }
-                    }
+                    llmResponse = visionSession.generateResponse()
+                    val totalInferenceTime = System.currentTimeMillis() - inferenceStartTime
+                    Log.i(TAG, "✅ AI inference completed in ${totalInferenceTime / 1000.0}s")
                     
-                    try {
-                        llmResponse = visionSession.generateResponse()
-                        progressJob.cancel()
-                        val totalInferenceTime = System.currentTimeMillis() - inferenceStartTime
-                        Log.i(TAG, "✅ AI inference completed in ${totalInferenceTime / 1000.0}s")
-                        
-                        // Log performance insights
-                        when {
-                            totalInferenceTime < 10000 -> Log.i(TAG, "🚀 Excellent performance - likely using NPU or high-end GPU")
-                            totalInferenceTime < 25000 -> Log.i(TAG, "⚡ Good performance - likely using GPU acceleration")
-                            totalInferenceTime < 45000 -> Log.i(TAG, "👍 Acceptable performance - may be using CPU with optimizations")
-                            else -> Log.w(TAG, "🐌 Slow performance - check acceleration configuration")
-                        }
-                    } catch (inferenceException: Exception) {
-                        progressJob.cancel()
-                        throw inferenceException
+                    // Log performance insights
+                    when {
+                        totalInferenceTime < 10000 -> Log.i(TAG, "🚀 Excellent performance - likely using NPU or high-end GPU")
+                        totalInferenceTime < 25000 -> Log.i(TAG, "⚡ Good performance - likely using GPU acceleration")
+                        totalInferenceTime < 45000 -> Log.i(TAG, "👍 Acceptable performance - may be using CPU with optimizations")
+                        else -> Log.w(TAG, "🐌 Slow performance - check acceleration configuration")
                     }
                 } catch (e: Exception) {
                     val (errorType, errorMessage) = when {
                         e.message?.contains("Input is too long for the model") == true -> {
                             Log.e(TAG, "Token limit exceeded. This typically happens when a session is reused.", e)
-                            "TOKEN_LIMIT_EXCEEDED" to "Analysis failed: The model's token limit was exceeded. Please try again."
+                            "TOKEN_LIMIT_EXCEEDED" to ErrorUtils.getUserFriendlyError(e)
                         }
                         e.message?.contains("OUT_OF_RANGE") == true -> {
                             Log.e(TAG, "Session is in an invalid state", e)
-                            "SESSION_ERROR" to "Analysis failed: The analysis session is in an invalid state. Please try again."
+                            "SESSION_ERROR" to ErrorUtils.getUserFriendlyError(e)
                         }
                         else -> {
                             Log.e(TAG, "LLM inference failed", e)
-                            "INFERENCE_ERROR" to "Analysis failed: ${e.message ?: "Unknown error"}"
+                            "INFERENCE_ERROR" to ErrorUtils.getUserFriendlyError(e)
                         }
                     }
                     
@@ -250,10 +262,17 @@ class PhotoMealExtractor(
                     )
                 }
             }
+            
+            progress = progress.updateStep("AI Analysis", AnalysisStep.StepStatus.COMPLETED, timings["LLM Inference"])
+            onProgress?.invoke(progress)
+            
             Log.d(TAG, "Raw AI Response: $llmResponse")
 
-            // Step 4: Parse the JSON response from the AI.
+            // Step 5: Parse the JSON response from the AI.
             lateinit var foodItems: List<IdentifiedFoodItem>
+            progress = progress.updateStep("Parsing Results", AnalysisStep.StepStatus.IN_PROGRESS)
+            onProgress?.invoke(progress)
+            
             timings["JSON Parsing"] = measureTimeMillis {
                 try {
                     val reasoningMode = ImageReasoningPreferencesManager.getSelectedMode()
@@ -304,10 +323,17 @@ class PhotoMealExtractor(
                     )
                 }
             }
+            
+            progress = progress.updateStep("Parsing Results", AnalysisStep.StepStatus.COMPLETED, timings["JSON Parsing"])
+            onProgress?.invoke(progress)
+            
             Log.i(TAG, "Parsed ${foodItems.size} food items: $foodItems")
 
-            // Step 5: Look up nutritional information for each identified item.
+            // Step 6: Look up nutritional information for each identified item.
             lateinit var analyzedItems: List<AnalyzedFoodItem>
+            progress = progress.updateStep("Looking Up Nutrition", AnalysisStep.StepStatus.IN_PROGRESS)
+            onProgress?.invoke(progress)
+            
             timings["Nutrient Lookup"] = measureTimeMillis {
                 analyzedItems = foodItems.map { item ->
                     val nutrients = enhancedNutrientDbHelper.lookup(item.food, item.quantity, item.unit)
@@ -329,6 +355,10 @@ class PhotoMealExtractor(
                     )
                 }
             }
+            
+            progress = progress.updateStep("Looking Up Nutrition", AnalysisStep.StepStatus.COMPLETED, timings["Nutrient Lookup"])
+            onProgress?.invoke(progress)
+            
             Log.i(TAG, "Nutrient analysis complete.")
 
             val totalCalories = analyzedItems.sumOf { it.calories }
@@ -371,11 +401,26 @@ class PhotoMealExtractor(
             )
         } finally {
             // Step 7: Clean up the session to release memory.
-            visionSession.close()
-            // Force garbage collection to help release native GPU/CPU memory used by the model.
-            System.gc()
-            System.runFinalization()
-            Log.d(TAG, "Session cleaned up and memory released.")
+            // Following Google AI Edge Gallery pattern for proper resource cleanup
+            try {
+                // Update status to cleanup
+                appContainer.updateModelStatus(com.stel.gemmunch.ModelStatus.CLEANUP)
+                
+                visionSession.close()
+                Log.d(TAG, "✅ Session closed successfully")
+                
+                // Notify container that session is closed so it can pre-warm a new one
+                appContainer.onSessionClosed()
+                
+                // Update status back to preparing session after cleanup
+                appContainer.updateModelStatus(com.stel.gemmunch.ModelStatus.PREPARING_SESSION)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to close vision session", e)
+            }
+            
+            // Note: Removing System.gc() as it's generally discouraged and 
+            // MediaPipe should handle its own memory management
+            Log.d(TAG, "Session cleanup completed for image hash: $imageHash")
         }
     }
 
@@ -545,6 +590,31 @@ class PhotoMealExtractor(
         }
         
         return hints.joinToString(" ") + if (hints.size == 1) " User notes: $userContext" else ""
+    }
+    
+    /**
+     * Calculates a hash of the bitmap for debugging purposes.
+     * This helps identify when the same image is being analyzed multiple times.
+     */
+    private fun calculateImageHash(bitmap: Bitmap): String {
+        return try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            
+            // Sample pixels for faster hashing (every 10th pixel)
+            val step = 10
+            for (y in 0 until bitmap.height step step) {
+                for (x in 0 until bitmap.width step step) {
+                    val pixel = bitmap.getPixel(x, y)
+                    digest.update(pixel.toByte())
+                }
+            }
+            
+            // Convert to hex string
+            digest.digest().joinToString("") { "%02x".format(it) }.take(16)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to calculate image hash", e)
+            "unknown"
+        }
     }
 
 }

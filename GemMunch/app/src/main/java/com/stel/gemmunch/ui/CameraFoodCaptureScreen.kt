@@ -4,16 +4,24 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.material3.MenuAnchorType
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,6 +39,13 @@ import com.stel.gemmunch.utils.MediaQualityPreferencesManager
 import com.stel.gemmunch.utils.ImageReasoningPreferencesManager
 import com.stel.gemmunch.data.models.*
 import com.stel.gemmunch.ui.components.ManualNutritionEntry
+import com.stel.gemmunch.ui.components.AnalysisProgressDisplay
+import com.stel.gemmunch.data.models.AnalysisProgress
+import com.stel.gemmunch.data.models.AnalysisStep
+import com.stel.gemmunch.ModelStatus
+import com.stel.gemmunch.data.InitializationMetrics
+import com.stel.gemmunch.data.models.AccelerationStats
+import kotlinx.coroutines.flow.StateFlow
 import java.time.ZoneId
 import java.time.Instant
 import java.time.LocalDateTime
@@ -67,8 +82,15 @@ fun CameraFoodCaptureScreen(
     initializationProgress: String?,
     onRequestHealthConnectPermissions: () -> Unit
 ) {
+    // Pre-warm session when screen is displayed
+    LaunchedEffect(isAiReady) {
+        if (isAiReady) {
+            mainViewModel.appContainer.prewarmSessionOnDemand()
+        }
+    }
     val uiState by foodViewModel.uiState.collectAsStateWithLifecycle()
     val mainUiState by mainViewModel.uiState.collectAsStateWithLifecycle()
+    val modelStatus by mainViewModel.appContainer.modelStatus.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -82,6 +104,9 @@ fun CameraFoodCaptureScreen(
     // Health Connect state
     var writeToHealthConnect by remember { mutableStateOf(false) }
     var healthConnectItemSelections by remember { mutableStateOf<List<HealthConnectItemSelection>>(emptyList()) }
+    
+    // AI Details Dialog state
+    var showAiDetailsDialog by remember { mutableStateOf(false) }
     
     // Use ViewModel to track photo metadata (persists across navigation)
     var isFromGallery by remember { mutableStateOf(foodViewModel.isFromGallery) }
@@ -167,7 +192,17 @@ fun CameraFoodCaptureScreen(
     )
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("GemMunch") }) },
+        topBar = { 
+            TopAppBar(
+                title = { Text("GemMunch") },
+                actions = {
+                    ModelStatusIndicator(
+                        modelStatus = modelStatus,
+                        onClick = { showAiDetailsDialog = true }
+                    )
+                }
+            )
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         LazyColumn(
@@ -224,33 +259,6 @@ fun CameraFoodCaptureScreen(
             
             when (val state = uiState) {
                 is FoodCaptureState.Idle -> {
-                    // Show acceleration stats at the top
-                    item {
-                        val accelerationStats by mainViewModel.appContainer.accelerationStats.collectAsStateWithLifecycle()
-                        accelerationStats?.let { stats ->
-                            AccelerationStatsCard(
-                                accelerationStats = stats,
-                                onReanalyze = {
-                                    // Clear cache and trigger re-initialization
-                                    mainViewModel.reanalyzeAcceleration()
-                                }
-                            )
-                        }
-                    }
-                    
-                    item { 
-                        val accelerationStats by mainViewModel.appContainer.accelerationStats.collectAsStateWithLifecycle()
-                        if (accelerationStats != null) {
-                            Spacer(modifier = Modifier.height(8.dp)) 
-                        }
-                    }
-                    
-                    // Show initialization metrics
-                    item {
-                        InitializationMetricsCard(
-                            metricsFlow = mainViewModel.initMetricsUpdates
-                        )
-                    }
                     
                     // Show Health Connect banner if permissions not granted
                     if (mainUiState.healthConnectAvailable && !mainUiState.healthConnectPermissionsGranted) {
@@ -349,10 +357,10 @@ fun CameraFoodCaptureScreen(
                 }
                 is FoodCaptureState.Loading -> {
                     item {
-                        CircularProgressIndicator()
-                    }
-                    item {
-                        Text("Analyzing your meal...")
+                        AnalysisProgressDisplay(
+                            progress = state.progress,
+                            modifier = Modifier.padding(16.dp)
+                        )
                     }
                 }
                 is FoodCaptureState.SwitchingModel -> {
@@ -835,6 +843,15 @@ fun CameraFoodCaptureScreen(
         }
     }
     
+    // AI Details Dialog
+    if (showAiDetailsDialog) {
+        AiDetailsDialog(
+            onDismiss = { showAiDetailsDialog = false },
+            accelerationStats = mainViewModel.appContainer.accelerationStats.collectAsStateWithLifecycle().value,
+            initializationMetrics = mainViewModel.initMetrics,
+            metricsFlow = mainViewModel.initMetricsUpdates
+        )
+    }
 }
 // Helper function to build feedback document
 private fun buildFeedbackDocument(
@@ -1783,5 +1800,166 @@ fun ContextTextInputCard(
                 )
             }
         }
+    }
+}
+
+@Composable
+fun ModelStatusIndicator(
+    modelStatus: ModelStatus,
+    onClick: () -> Unit
+) {
+    val statusText = when (modelStatus) {
+        ModelStatus.INITIALIZING -> "Initializing"
+        ModelStatus.PREPARING_SESSION -> "Preparing Session"
+        ModelStatus.READY -> "Ready"
+        ModelStatus.RUNNING_INFERENCE -> "Running Multi-modal Inference"
+        ModelStatus.CLEANUP -> "Cleanup"
+    }
+    
+    val statusColor = when (modelStatus) {
+        ModelStatus.INITIALIZING -> MaterialTheme.colorScheme.onSurfaceVariant
+        ModelStatus.PREPARING_SESSION -> MaterialTheme.colorScheme.primary
+        ModelStatus.READY -> MaterialTheme.colorScheme.primary
+        ModelStatus.RUNNING_INFERENCE -> MaterialTheme.colorScheme.secondary
+        ModelStatus.CLEANUP -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    
+    val icon = when (modelStatus) {
+        ModelStatus.INITIALIZING -> Icons.Default.HourglassEmpty
+        ModelStatus.PREPARING_SESSION -> Icons.Default.Sync
+        ModelStatus.READY -> Icons.Default.CheckCircle
+        ModelStatus.RUNNING_INFERENCE -> Icons.Default.AutoAwesome
+        ModelStatus.CLEANUP -> Icons.Default.CleaningServices
+    }
+    
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clickable { onClick() }
+            .padding(horizontal = 8.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = statusText,
+            tint = statusColor,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = statusText,
+            style = MaterialTheme.typography.labelMedium,
+            color = statusColor
+        )
+    }
+}
+
+@Composable
+fun AiDetailsDialog(
+    onDismiss: () -> Unit,
+    accelerationStats: AccelerationStats?,
+    initializationMetrics: InitializationMetrics,
+    metricsFlow: StateFlow<List<InitializationMetrics.MetricUpdate>>
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnClickOutside = true,
+            dismissOnBackPress = true,
+            usePlatformDefaultWidth = false, // Allow custom width
+            decorFitsSystemWindows = true // Helps with pointer bounds
+        )
+    ) {
+        // Add a Box to handle click outside and prevent pointer bounds issues
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(0.9f) // 90% of screen width
+                    .wrapContentHeight() // Dynamic height based on content
+                    .heightIn(min = 400.dp, max = LocalConfiguration.current.screenHeightDp.dp * 0.85f) // Min height for loading state
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {} // Prevent clicks from passing through
+                    ),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp) // Adequate padding inside
+            ) {
+                // Title Row (non-scrollable)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "AI System Details",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(32.dp) // Larger close button
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+                
+                // Divider
+                HorizontalDivider(
+                    modifier = Modifier.padding(bottom = 16.dp),
+                    thickness = 1.dp
+                )
+                
+                // Scrollable content
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(20.dp) // More space between cards
+                ) {
+                    // Acceleration Stats
+                    if (accelerationStats != null) {
+                        AccelerationStatsCard(
+                            accelerationStats = accelerationStats,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    
+                    // Initialization Metrics
+                    InitializationMetricsCard(
+                        metricsFlow = metricsFlow,
+                        initializationMetrics = initializationMetrics,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    // Add bottom padding for better scrolling experience
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+        }
+    }
     }
 }

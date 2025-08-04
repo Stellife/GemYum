@@ -19,18 +19,32 @@ import com.stel.gemmunch.utils.PlayServicesAccelerationService
 import com.google.mediapipe.tasks.genai.llminference.GraphOptions
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
 private const val TAG = "AppContainer"
+
+/**
+ * Represents the current state of the AI model
+ */
+enum class ModelStatus {
+    INITIALIZING,
+    PREPARING_SESSION,
+    READY,
+    RUNNING_INFERENCE,
+    CLEANUP
+}
 
 /**
  * The interface for our dependency container. It defines the components
@@ -44,11 +58,16 @@ interface AppContainer {
     val nutritionSearchService: NutritionSearchService
     val isReady: StateFlow<Boolean>
     val accelerationStats: StateFlow<AccelerationStats?>
+    val modelStatus: StateFlow<ModelStatus>
 
     suspend fun initialize(modelFiles: Map<String, File>)
     suspend fun getReadyVisionSession(): LlmInferenceSession
     suspend fun switchVisionModel(newModelKey: String, modelFiles: Map<String, File>)
     fun clearSessionPool()
+    fun prewarmSessionOnDemand()
+    fun startContinuousPrewarming()
+    fun updateModelStatus(status: ModelStatus)
+    fun onSessionClosed()
     fun onAppDestroy()
 }
 
@@ -62,8 +81,7 @@ class DefaultAppContainer(
 ) : AppContainer {
     override val applicationContext: Context get() = context.applicationContext
 
-    // A background coroutine scope for pre-warming AI sessions.
-    private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // Background scope removed - no longer needed without session pooling
 
     // Dynamic Google Play Services acceleration
     private val playServicesAcceleration = PlayServicesAccelerationService(context)
@@ -73,6 +91,9 @@ class DefaultAppContainer(
 
     private val _accelerationStats = MutableStateFlow<AccelerationStats?>(null)
     override val accelerationStats: StateFlow<AccelerationStats?> = _accelerationStats.asStateFlow()
+    
+    private val _modelStatus = MutableStateFlow(ModelStatus.INITIALIZING)
+    override val modelStatus: StateFlow<ModelStatus> = _modelStatus.asStateFlow()
 
     override var photoMealExtractor: PhotoMealExtractor? = null
         private set
@@ -103,10 +124,15 @@ class DefaultAppContainer(
     }
     private lateinit var enhancedNutrientDbHelper: EnhancedNutrientDbHelper
 
-    // A pool of ready-to-use vision sessions for instant performance.
-    private val visionSessionPool = mutableListOf<LlmInferenceSession>()
-    private val maxPoolSize = 2 // Pre-warm 2 sessions for immediate and follow-up use.
-    private var isPrewarmingActive = false
+    // Pre-warmed session management
+    // We maintain a single pre-warmed session that's replaced after the previous one is closed
+    private var prewarmedSession: LlmInferenceSession? = null
+    private var isPrewarmingInProgress = false
+    private var sessionCount = 0 // Track how many sessions we've created
+    private var isSessionInUse = false // Track if a session is currently being used
+    
+    // Coroutine job for continuous pre-warming
+    private var prewarmingJob: kotlinx.coroutines.Job? = null
 
     /**
      * Creates consistent session options for all vision sessions.
@@ -162,7 +188,7 @@ class DefaultAppContainer(
                 // Step 2A: Create MediaPipe options with GPU backend
                 initMetrics.startSubPhase("AIInitialization", "CreateLlmInference")
                 try {
-                    val accelerationWrapper = validatedConfig as com.stel.gemmunch.utils.AccelerationConfigWrapper
+                    val accelerationWrapper = validatedConfig
                     
                     val llmInferenceOptions = LlmInference.LlmInferenceOptions.builder()
                         .setModelPath(visionModelFile.absolutePath)
@@ -288,10 +314,11 @@ class DefaultAppContainer(
             _isReady.update { true }
             initMetrics.endPhase("AIInitialization")
             Log.i(TAG, "AppContainer initialization successful in ${initMetrics.phases["AIInitialization"]?.durationMs}ms")
-
-            // Start pre-warming sessions in the background for a snappy UI experience.
-            initMetrics.startPhase("SessionPrewarming")
-            startSessionPrewarming()
+            
+            // Update status to preparing session
+            _modelStatus.value = ModelStatus.PREPARING_SESSION
+            
+            // Don't start pre-warming here - MainViewModel will do it
 
         } catch (e: Exception) {
             Log.e(TAG, "Error during AI component initialization", e)
@@ -305,35 +332,90 @@ class DefaultAppContainer(
     }
 
     /**
-     * Fills the session pool in the background.
+     * Starts continuous pre-warming to always have a fresh session ready.
+     * As soon as a session is consumed, we create a new one.
      */
-    private fun startSessionPrewarming() {
-        if (isPrewarmingActive) return
-        isPrewarmingActive = true
-
-        backgroundScope.launch {
-            Log.i(TAG, "🔥 Starting vision session pre-warming for instant food analysis...")
-            repeat(maxPoolSize) { index ->
+    override fun startContinuousPrewarming() {
+        prewarmingJob?.cancel()
+        
+        prewarmingJob = GlobalScope.launch(Dispatchers.IO) {
+            initMetrics.startPhase("SessionPrewarming")
+            
+            while (isActive) {
                 try {
-                    val subPhaseName = "PrewarmSession${index + 1}"
-                    initMetrics.startSubPhase("SessionPrewarming", subPhaseName)
-                    val startTime = System.currentTimeMillis()
-                    val session = LlmInferenceSession.createFromOptions(visionLlmInference!!, visionSessionOptions!!)
-                    val duration = System.currentTimeMillis() - startTime
-                    synchronized(visionSessionPool) {
-                        visionSessionPool.add(session)
+                    // Only pre-warm if: no existing pre-warmed session, not currently pre-warming, 
+                    // no session in use, and LlmInference is initialized
+                    if (prewarmedSession == null && !isPrewarmingInProgress && !isSessionInUse && visionLlmInference != null) {
+                        prewarmSessionAsync()
                     }
-                    initMetrics.endSubPhase("SessionPrewarming", subPhaseName, "${duration}ms")
-                    Log.i(TAG, "✅ Pre-warmed session ${index + 1} ready in ${duration}ms")
+                    // Check every 100ms if we need to create a new session
+                    kotlinx.coroutines.delay(100)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to pre-warm session ${index + 1}", e)
+                    if (e !is kotlinx.coroutines.CancellationException) {
+                        Log.e(TAG, "Error in continuous pre-warming", e)
+                        kotlinx.coroutines.delay(1000) // Wait longer on error
+                    } else {
+                        throw e // Re-throw cancellation to properly exit
+                    }
                 }
             }
-            initMetrics.endPhase("SessionPrewarming")
-            Log.i(TAG, "🚀 Session pool ready!")
-
-            // Log the complete initialization report
-            Log.i(TAG, "\n${initMetrics.generateReport()}")
+        }
+        
+        Log.i(TAG, "🚀 Started continuous session pre-warming")
+        
+        // Log the complete initialization report
+        Log.i(TAG, "\n${initMetrics.generateReport()}")
+    }
+    
+    /**
+     * Pre-warms a single session asynchronously
+     */
+    private suspend fun prewarmSessionAsync() {
+        if (isPrewarmingInProgress) return
+        
+        isPrewarmingInProgress = true
+        try {
+            val inference = visionLlmInference ?: return
+            val options = visionSessionOptions ?: return
+            
+            sessionCount++
+            Log.d(TAG, "🔥 Pre-warming session #$sessionCount...")
+            _modelStatus.value = ModelStatus.PREPARING_SESSION
+            val startTime = System.currentTimeMillis()
+            
+            val session = withContext(Dispatchers.IO) {
+                LlmInferenceSession.createFromOptions(inference, options)
+            }
+            
+            val duration = System.currentTimeMillis() - startTime
+            prewarmedSession = session
+            
+            if (initMetrics.phases["SessionPrewarming"]?.endTime == null) {
+                initMetrics.endPhase("SessionPrewarming")
+            }
+            
+            Log.d(TAG, "✅ Session #$sessionCount pre-warmed and ready in ${duration}ms")
+            _modelStatus.value = ModelStatus.READY
+        } catch (e: Exception) {
+            if (e !is kotlinx.coroutines.CancellationException) {
+                Log.e(TAG, "Failed to pre-warm session", e)
+            }
+        } finally {
+            isPrewarmingInProgress = false
+        }
+    }
+    
+    /**
+     * Pre-warm a single session on demand (e.g., when camera is opened)
+     */
+    override fun prewarmSessionOnDemand() {
+        if (prewarmedSession != null || isPrewarmingInProgress || isSessionInUse) {
+            Log.d(TAG, "Cannot pre-warm: session already pre-warmed, in progress, or in use")
+            return
+        }
+        
+        GlobalScope.launch(Dispatchers.IO) {
+            prewarmSessionAsync()
         }
     }
 
@@ -341,37 +423,55 @@ class DefaultAppContainer(
      * Gets a ready session from the pool or creates a new one if the pool is empty.
      * This is the key to providing a fast, responsive experience for the user.
      *
-     * IMPORTANT: Sessions are single-use to avoid token accumulation issues.
-     * Each session is used once and then discarded.
+     * Following Google AI Edge Gallery pattern: We keep the expensive LlmInference instance
+     * but create fresh LlmInferenceSession for each analysis to ensure complete isolation.
      */
     override suspend fun getReadyVisionSession(): LlmInferenceSession = withContext(Dispatchers.IO) {
-        synchronized(visionSessionPool) {
-            if (visionSessionPool.isNotEmpty()) {
-                val session = visionSessionPool.removeFirst()
-                Log.d(TAG, "⚡ Using pre-warmed session from pool (${visionSessionPool.size} remaining)")
-                // Immediately start creating a replacement session in the background.
-                backgroundScope.launch {
-                    try {
-                        val replacementSession = LlmInferenceSession.createFromOptions(visionLlmInference!!, visionSessionOptions!!)
-                        synchronized(visionSessionPool) {
-                            if (visionSessionPool.size < maxPoolSize) {
-                                visionSessionPool.add(replacementSession)
-                                Log.d(TAG, "🔄 Replacement session added to pool")
-                            } else {
-                                replacementSession.close() // Pool is full, close the extra one.
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to create replacement session", e)
-                    }
-                }
-                return@withContext session
-            }
+        // First try to use pre-warmed session
+        val existingSession = prewarmedSession
+        if (existingSession != null) {
+            prewarmedSession = null // Consume it
+            isSessionInUse = true // Mark session as in use
+            val sessionNum = sessionCount // Capture current session number
+            Log.d(TAG, "⚡ Using pre-warmed session #$sessionNum (instant!)")
+            
+            // Update status to running inference
+            _modelStatus.value = ModelStatus.RUNNING_INFERENCE
+            
+            // Don't pre-warm yet - wait for session to be closed
+            Log.d(TAG, "📌 Session #$sessionNum now in use - will pre-warm after cleanup")
+            
+            return@withContext existingSession
         }
-
-        // Fallback: If the pool is empty, create a session directly. This may cause a slight UI delay.
-        Log.w(TAG, "⚠️ Session pool empty, creating session directly...")
-        LlmInferenceSession.createFromOptions(visionLlmInference!!, visionSessionOptions!!)
+        
+        // No pre-warmed session available, create one now
+        val inference = visionLlmInference ?: throw IllegalStateException("LlmInference not initialized")
+        val options = visionSessionOptions ?: throw IllegalStateException("Session options not initialized")
+        
+        sessionCount++
+        Log.d(TAG, "🔄 Creating session #$sessionCount on-demand (no pre-warmed available)...")
+        _modelStatus.value = ModelStatus.PREPARING_SESSION
+        val startTime = System.currentTimeMillis()
+        
+        try {
+            val session = LlmInferenceSession.createFromOptions(inference, options)
+            val duration = System.currentTimeMillis() - startTime
+            Log.d(TAG, "✅ Fresh session created in ${duration}ms")
+            
+            // Mark session as in use
+            isSessionInUse = true
+            
+            // Update status to running inference
+            _modelStatus.value = ModelStatus.RUNNING_INFERENCE
+            
+            // Don't pre-warm yet - wait for session to be closed
+            Log.d(TAG, "📌 Session #$sessionCount now in use - will pre-warm after cleanup")
+            
+            return@withContext session
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create session", e)
+            throw Exception("Failed to create AI session: ${e.message}", e)
+        }
     }
 
     /**
@@ -384,10 +484,8 @@ class DefaultAppContainer(
             _isReady.update { false }
 
             // 1. Clean up old resources.
-            synchronized(visionSessionPool) {
-                visionSessionPool.forEach { it.close() }
-                visionSessionPool.clear()
-            }
+            prewarmingJob?.cancel()
+            clearSessionPool()
             visionLlmInference?.close()
             visionLlmInference = null
             visionSessionOptions = null
@@ -441,9 +539,8 @@ class DefaultAppContainer(
             // Use the same session options to ensure consistency
             visionSessionOptions = createVisionSessionOptions()
 
-            // 4. Restart the session pre-warming process.
-            isPrewarmingActive = false
-            startSessionPrewarming()
+            // 4. Restart continuous pre-warming with new model
+            startContinuousPrewarming()
 
             _isReady.update { true }
             Log.i(TAG, "✅ Vision model switched to $newModelKey successfully")
@@ -451,41 +548,33 @@ class DefaultAppContainer(
     }
 
     /**
-     * Clears all sessions from the pool. This is useful when we need to ensure
-     * fresh sessions, such as after a cancellation.
+     * Clears the pre-warmed session if one exists.
      */
     override fun clearSessionPool() {
-        Log.w(TAG, "Clearing session pool to ensure fresh sessions")
-        synchronized(visionSessionPool) {
-            visionSessionPool.forEach { session ->
-                try {
-                    session.close()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error closing session during pool clear", e)
-                }
-            }
-            visionSessionPool.clear()
-        }
-
-        // Refill the pool with fresh sessions in the background
-        if (isPrewarmingActive && visionLlmInference != null && visionSessionOptions != null) {
-            backgroundScope.launch {
-                repeat(maxPoolSize) { index ->
-                    try {
-                        val session = LlmInferenceSession.createFromOptions(visionLlmInference!!, visionSessionOptions!!)
-                        synchronized(visionSessionPool) {
-                            if (visionSessionPool.size < maxPoolSize) {
-                                visionSessionPool.add(session)
-                                Log.d(TAG, "Added fresh session ${index + 1} to pool")
-                            } else {
-                                session.close()
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to create fresh session ${index + 1}", e)
-                    }
-                }
-            }
+        prewarmedSession?.close()
+        prewarmedSession = null
+        Log.d(TAG, "Pre-warmed session cleared")
+    }
+    
+    /**
+     * Updates the model status for UI display
+     */
+    override fun updateModelStatus(status: ModelStatus) {
+        _modelStatus.value = status
+    }
+    
+    /**
+     * Called when a session is closed and cleaned up.
+     * This triggers pre-warming of a new session.
+     */
+    override fun onSessionClosed() {
+        Log.d(TAG, "🔓 Session closed - marking as no longer in use")
+        isSessionInUse = false
+        
+        // Now it's safe to pre-warm a new session
+        if (visionLlmInference != null) {
+            Log.d(TAG, "🔄 Starting pre-warm of next session after cleanup")
+            prewarmSessionOnDemand()
         }
     }
 
@@ -508,10 +597,8 @@ class DefaultAppContainer(
      */
     override fun onAppDestroy() {
         Log.i(TAG, "App destroyed. Closing all active AI components.")
-        synchronized(visionSessionPool) {
-            visionSessionPool.forEach { it.close() }
-            visionSessionPool.clear()
-        }
+        prewarmingJob?.cancel()
+        clearSessionPool()
         visionLlmInference?.close()
         enhancedNutrientDbHelper.close()
         playServicesAcceleration.cleanup()
