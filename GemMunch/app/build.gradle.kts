@@ -136,6 +136,9 @@ dependencies {
     implementation("com.google.android.gms:play-services-tflite-gpu:16.4.0")
     implementation("com.google.android.gms:play-services-tflite-support:16.4.0")
     implementation("com.google.android.gms:play-services-tflite-acceleration-service:16.0.0-beta01")
+    
+    // Coroutines Play Services support for cleaner async handling
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
 
 
 
