@@ -14,6 +14,10 @@ import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.delay
 import java.time.Instant
 import kotlin.system.measureTimeMillis
 
@@ -57,19 +61,28 @@ class PhotoMealExtractor(
     - Any visible ingredients or toppings
     - How the food is arranged or presented
     
-    Step 2: Based on your observations, identify the food items.
+    Step 2: Based on your observations, identify each visible food component.
     Think carefully:
+    - For composite foods (tacos, burritos, sandwiches), identify the main components AND visible ingredients
     - Tacos have folded tortillas with exposed fillings on top
     - Burritos are fully wrapped cylinders
     - Burgers have round buns with patties between them
+    - Look for proteins, vegetables, sauces, and other identifiable ingredients
     
     Step 3: Provide your final answer as a JSON array at the end.
+    Include both the main item AND clearly visible ingredients when possible.
     
     Example response:
     "I see three folded corn tortillas arranged in a standing V-shape. The tortillas appear crispy and golden. Visible fillings include ground meat (appears to be seasoned beef), shredded lettuce, diced tomatoes, and shredded cheese on top. The arrangement and exposed fillings clearly indicate these are hard-shell tacos.
     
     Final answer:
-    [{"food": "taco", "quantity": 3, "unit": "item", "confidence": 0.9}]"
+    [
+        {"food": "hard shell taco", "quantity": 3, "unit": "item", "confidence": 0.9},
+        {"food": "ground beef", "quantity": 0.5, "unit": "cup", "confidence": 0.8},
+        {"food": "shredded lettuce", "quantity": 0.25, "unit": "cup", "confidence": 0.9},
+        {"food": "diced tomatoes", "quantity": 2, "unit": "tablespoon", "confidence": 0.8},
+        {"food": "shredded cheese", "quantity": 2, "unit": "tablespoon", "confidence": 0.9}
+    ]"
     
     Your analysis:
     """.trimIndent()
@@ -104,7 +117,7 @@ class PhotoMealExtractor(
     JSON output:
     """.trimIndent()
 
-    suspend fun extract(bitmap: Bitmap): MealAnalysis = withContext(Dispatchers.IO) {
+    suspend fun extract(bitmap: Bitmap, userContext: String? = null): MealAnalysis = withContext(Dispatchers.IO) {
         val modelKey = VisionModelPreferencesManager.getSelectedVisionModel()
         val modelDisplayName = VisionModelPreferencesManager.getVisionModelDisplayName(modelKey)
         Log.i(TAG, "Starting meal photo analysis with $modelDisplayName...")
@@ -120,15 +133,21 @@ class PhotoMealExtractor(
         try {
             // Step 2: Add the text prompt and the image to the session.
             val reasoningMode = ImageReasoningPreferencesManager.getSelectedMode()
-            val promptToUse = when (reasoningMode) {
+            val basePrompt = when (reasoningMode) {
                 ImageReasoningPreferencesManager.ImageReasoningMode.REASONING -> reasoningPromptText
                 ImageReasoningPreferencesManager.ImageReasoningMode.SINGLE_SHOT -> singleShotPromptText
             }
             
+            // Build the final prompt with optional user context
+            val promptToUse = buildPromptWithContext(basePrompt, userContext)
+            
             timings["Text Prompt Add"] = measureTimeMillis {
                 Log.d(TAG, "Adding text prompt to session...")
                 Log.d(TAG, "Reasoning mode: ${reasoningMode.displayName}")
-                Log.d(TAG, "Prompt text: $promptToUse")
+                if (!userContext.isNullOrBlank()) {
+                    Log.d(TAG, "User context provided: $userContext")
+                }
+                Log.d(TAG, "Final prompt: $promptToUse")
                 visionSession.addQueryChunk(promptToUse)
                 Log.d(TAG, "Text prompt added successfully")
             }
@@ -149,7 +168,47 @@ class PhotoMealExtractor(
             lateinit var llmResponse: String
             timings["LLM Inference"] = measureTimeMillis {
                 try {
-                    llmResponse = visionSession.generateResponse()
+                    Log.i(TAG, "🚀 Starting AI inference with optimized acceleration...")
+                    Log.i(TAG, "📊 Context: ${userContext?.length ?: 0} chars, Image: ${bitmap.width}x${bitmap.height}")
+                    Log.i(TAG, "🎯 Model: $modelDisplayName, Mode: ${reasoningMode.displayName}")
+                    
+                    // Log every 10 seconds during inference to show it's working
+                    val inferenceStartTime = System.currentTimeMillis()
+                    val progressJob = GlobalScope.launch {
+                        var elapsedSeconds = 0
+                        while (isActive) {
+                            delay(10000) // Every 10 seconds
+                            elapsedSeconds += 10
+                            val currentTime = System.currentTimeMillis()
+                            val actualElapsed = (currentTime - inferenceStartTime) / 1000
+                            Log.i(TAG, "🤖 AI still processing... ${actualElapsed}s elapsed (expected: ${elapsedSeconds}s)")
+                            
+                            // Add performance context based on elapsed time
+                            when {
+                                actualElapsed > 60 -> Log.w(TAG, "⚠️ Inference taking longer than expected - model may be running on CPU fallback")
+                                actualElapsed > 30 -> Log.i(TAG, "💡 This is normal for complex vision-language analysis")
+                                actualElapsed > 15 -> Log.i(TAG, "⏳ Model is working hard on detailed analysis...")
+                            }
+                        }
+                    }
+                    
+                    try {
+                        llmResponse = visionSession.generateResponse()
+                        progressJob.cancel()
+                        val totalInferenceTime = System.currentTimeMillis() - inferenceStartTime
+                        Log.i(TAG, "✅ AI inference completed in ${totalInferenceTime / 1000.0}s")
+                        
+                        // Log performance insights
+                        when {
+                            totalInferenceTime < 10000 -> Log.i(TAG, "🚀 Excellent performance - likely using NPU or high-end GPU")
+                            totalInferenceTime < 25000 -> Log.i(TAG, "⚡ Good performance - likely using GPU acceleration")
+                            totalInferenceTime < 45000 -> Log.i(TAG, "👍 Acceptable performance - may be using CPU with optimizations")
+                            else -> Log.w(TAG, "🐌 Slow performance - check acceleration configuration")
+                        }
+                    } catch (inferenceException: Exception) {
+                        progressJob.cancel()
+                        throw inferenceException
+                    }
                 } catch (e: Exception) {
                     val (errorType, errorMessage) = when {
                         e.message?.contains("Input is too long for the model") == true -> {
@@ -280,11 +339,16 @@ class PhotoMealExtractor(
             Log.i(TAG, "Session Creation: ${timings["Session Creation"]}ms")
             Log.i(TAG, "Text Prompt Add: ${timings["Text Prompt Add"]}ms")
             Log.i(TAG, "Image Add: ${timings["Image Add"]}ms")
-            Log.i(TAG, "LLM Inference: ${timings["LLM Inference"]}ms")
+            Log.i(TAG, "LLM Inference: ${timings["LLM Inference"]}ms (${(timings["LLM Inference"] ?: 0) / 1000.0}s)")
             Log.i(TAG, "JSON Parsing: ${timings["JSON Parsing"]}ms")
             Log.i(TAG, "Nutrient Lookup: ${timings["Nutrient Lookup"]}ms")
-            Log.i(TAG, "Total Time: ${totalTime}ms")
-            Log.i(TAG, "Meal analysis complete! Total Calories: $totalCalories")
+            Log.i(TAG, "Total Time: ${totalTime}ms (${totalTime / 1000.0}s)")
+            Log.i(TAG, "=== Analysis Summary ===")
+            Log.i(TAG, "Model: $modelDisplayName")
+            Log.i(TAG, "Items Identified: ${analyzedItems.size}")
+            Log.i(TAG, "Total Calories: $totalCalories")
+            Log.i(TAG, "Inference Speed: ${if (timings["LLM Inference"] != null && timings["LLM Inference"]!! > 0) "%.2f".format(1000.0 / timings["LLM Inference"]!!) else "N/A"} inferences/second")
+            Log.i(TAG, "========================")
 
             // Step 6: Assemble the final MealAnalysis object with performance metrics.
             val performanceMetrics = PerformanceMetrics(
@@ -405,6 +469,82 @@ class PhotoMealExtractor(
                 "Failed to process AI response. Please try again."
             )
         }
+    }
+
+    /**
+     * Builds the final prompt by combining the base prompt with optional user context.
+     * This allows users to provide hints that can improve AI accuracy.
+     */
+    private fun buildPromptWithContext(basePrompt: String, userContext: String?): String {
+        if (userContext.isNullOrBlank()) {
+            return basePrompt
+        }
+        
+        // Enhance the prompt with user context, prioritizing restaurant-specific items
+        val contextHint = buildContextHint(userContext)
+        
+        return """
+        ADDITIONAL CONTEXT: $contextHint
+        
+        $basePrompt
+        """.trimIndent()
+    }
+    
+    /**
+     * Analyzes user context and builds specific hints for the AI model.
+     */
+    private fun buildContextHint(userContext: String): String {
+        val lowerContext = userContext.lowercase().trim()
+        val hints = mutableListOf<String>()
+        
+        // Restaurant-specific hints
+        when {
+            lowerContext.contains("chipotle") -> {
+                hints.add("This meal is from Chipotle Mexican Grill. Look for items like burritos, bowls, tacos with ingredients such as barbacoa, carnitas, sofritas, cilantro-lime rice, black beans, pinto beans, guacamole, and various salsas.")
+                hints.add("Prioritize Chipotle menu items in your identification.")
+            }
+            lowerContext.contains("mexican") -> {
+                hints.add("This appears to be Mexican cuisine. Look for tacos, burritos, quesadillas, rice, beans, and traditional Mexican ingredients.")
+            }
+            lowerContext.contains("fast food") || lowerContext.contains("fast-food") -> {
+                hints.add("This is likely from a fast food restaurant. Consider standardized portion sizes and common fast food items.")
+            }
+        }
+        
+        // Meal type hints
+        when {
+            lowerContext.contains("breakfast") -> hints.add("This is a breakfast meal. Look for typical breakfast foods.")
+            lowerContext.contains("lunch") -> hints.add("This is a lunch meal.")
+            lowerContext.contains("dinner") -> hints.add("This is a dinner meal.")
+            lowerContext.contains("snack") -> hints.add("This is a snack or light meal.")
+        }
+        
+        // Dietary hints
+        when {
+            lowerContext.contains("vegetarian") -> hints.add("This meal is vegetarian - no meat products.")
+            lowerContext.contains("vegan") -> hints.add("This meal is vegan - no animal products.")
+            lowerContext.contains("gluten free") || lowerContext.contains("gluten-free") -> {
+                hints.add("This meal is gluten-free.")
+            }
+        }
+        
+        // Specific food hints
+        if (lowerContext.contains("bowl")) {
+            hints.add("This appears to be served in a bowl format.")
+        }
+        if (lowerContext.contains("burrito")) {
+            hints.add("Look carefully for burrito characteristics - wrapped tortilla format.")
+        }
+        if (lowerContext.contains("taco")) {
+            hints.add("Look for taco characteristics - folded tortillas with exposed fillings.")
+        }
+        
+        // If no specific hints identified, use the raw context
+        if (hints.isEmpty()) {
+            return "User notes: $userContext"
+        }
+        
+        return hints.joinToString(" ") + if (hints.size == 1) " User notes: $userContext" else ""
     }
 
 }

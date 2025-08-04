@@ -1,6 +1,7 @@
 package com.stel.gemmunch
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import com.stel.gemmunch.agent.PhotoMealExtractor
 import com.stel.gemmunch.data.api.UsdaApiService
@@ -9,8 +10,12 @@ import com.stel.gemmunch.data.NutrientDatabaseManager
 import com.stel.gemmunch.data.InitializationMetrics
 import com.stel.gemmunch.data.FeedbackStorageService
 import com.stel.gemmunch.data.HealthConnectManager
+import com.stel.gemmunch.data.NutritionSearchService
+import com.stel.gemmunch.data.models.AccelerationStats
+import com.stel.gemmunch.data.models.AppliedOptimization
 import com.stel.gemmunch.utils.GsonProvider
 import com.stel.gemmunch.utils.VisionModelPreferencesManager
+import com.stel.gemmunch.utils.PlayServicesAccelerationService
 import com.google.mediapipe.tasks.genai.llminference.GraphOptions
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
@@ -36,11 +41,14 @@ interface AppContainer {
     val photoMealExtractor: PhotoMealExtractor?
     val feedbackStorageService: FeedbackStorageService
     val healthConnectManager: HealthConnectManager
+    val nutritionSearchService: NutritionSearchService
     val isReady: StateFlow<Boolean>
+    val accelerationStats: StateFlow<AccelerationStats?>
 
     suspend fun initialize(modelFiles: Map<String, File>)
     suspend fun getReadyVisionSession(): LlmInferenceSession
     suspend fun switchVisionModel(newModelKey: String, modelFiles: Map<String, File>)
+    fun clearSessionPool()
     fun onAppDestroy()
 }
 
@@ -57,18 +65,31 @@ class DefaultAppContainer(
     // A background coroutine scope for pre-warming AI sessions.
     private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    // Dynamic Google Play Services acceleration
+    private val playServicesAcceleration = PlayServicesAccelerationService(context)
+
     private val _isReady = MutableStateFlow(false)
     override val isReady: StateFlow<Boolean> = _isReady.asStateFlow()
 
+    private val _accelerationStats = MutableStateFlow<AccelerationStats?>(null)
+    override val accelerationStats: StateFlow<AccelerationStats?> = _accelerationStats.asStateFlow()
+
     override var photoMealExtractor: PhotoMealExtractor? = null
         private set
-        
+
     override val feedbackStorageService: FeedbackStorageService by lazy {
         FeedbackStorageService(context, GsonProvider)
     }
-    
+
     override val healthConnectManager: HealthConnectManager by lazy {
         HealthConnectManager(context)
+    }
+
+    override val nutritionSearchService: NutritionSearchService by lazy {
+        NutritionSearchService(
+            enhancedNutrientDbHelper = enhancedNutrientDbHelper,
+            usdaApiService = usdaApiService
+        )
     }
 
     // Store the vision LLM instance and session options for reuse (singleton pattern).
@@ -77,8 +98,8 @@ class DefaultAppContainer(
 
     // Nutrition services for the PhotoMealExtractor.
     private val usdaApiService: UsdaApiService by lazy { UsdaApiService() }
-    private val nutrientDatabaseManager: NutrientDatabaseManager by lazy { 
-        NutrientDatabaseManager(context) 
+    private val nutrientDatabaseManager: NutrientDatabaseManager by lazy {
+        NutrientDatabaseManager(context)
     }
     private lateinit var enhancedNutrientDbHelper: EnhancedNutrientDbHelper
 
@@ -86,7 +107,7 @@ class DefaultAppContainer(
     private val visionSessionPool = mutableListOf<LlmInferenceSession>()
     private val maxPoolSize = 2 // Pre-warm 2 sessions for immediate and follow-up use.
     private var isPrewarmingActive = false
-    
+
     /**
      * Creates consistent session options for all vision sessions.
      * This ensures the same inference parameters are used regardless of when the session is created.
@@ -99,6 +120,13 @@ class DefaultAppContainer(
                     // Audio modality is NOT enabled - saves memory by not loading audio parameters
                     .build()
             )
+
+            // https://docs.unsloth.ai/basics/gemma-3n-how-to-run-and-fine-tune#official-recommended-settings
+            // Unsloth/Gemma team's reqs
+            // temperature = 1.0, top_k = 64, top_p = 0.95, min_p = 0.0
+            //  Chat template:
+            //  <bos><start_of_turn>user\nHello!<end_of_turn>\n<start_of_turn>model\nHey there!<end_of_turn>\n<start_of_turn>user\nWhat is 1+1?<end_of_turn>\n<start_of_turn>model\n
+            //
             .setTemperature(0.05f) // Even lower temperature for more deterministic output
             .setTopK(5) // More restrictive to reduce hallucinations
             .setTopP(0.95f) // Add nucleus sampling for better quality
@@ -109,30 +137,83 @@ class DefaultAppContainer(
     override suspend fun initialize(modelFiles: Map<String, File>) {
         Log.i(TAG, "AppContainer initialization started...")
         initMetrics.startPhase("AIInitialization")
-        
+
         try {
             // Get the user's selected vision model.
             initMetrics.startSubPhase("AIInitialization", "ModelSelection")
             val selectedVisionModel = VisionModelPreferencesManager.getSelectedVisionModel()
             val visionModelFile = modelFiles[selectedVisionModel]
                 ?: throw IllegalStateException("Selected vision model file '$selectedVisionModel' not found.")
-            initMetrics.endSubPhase("AIInitialization", "ModelSelection", 
+            initMetrics.endSubPhase("AIInitialization", "ModelSelection",
                 "Model: $selectedVisionModel, Size: ${visionModelFile.length() / 1024 / 1024}MB")
 
-            Log.i(TAG, "Initializing $selectedVisionModel for vision with GPU acceleration...")
+            Log.i(TAG, "Initializing $selectedVisionModel with intelligent acceleration selection...")
 
-            // Create the main LlmInference instance. This is heavy and is only done once.
+            // Step 1: Let Google Play Services dynamically determine acceleration
+            initMetrics.startSubPhase("AIInitialization", "PlayServicesAcceleration")
+            val accelerationResult = playServicesAcceleration.findOptimalAcceleration(visionModelFile.absolutePath)
+            initMetrics.endSubPhase("AIInitialization", "PlayServicesAcceleration",
+                "${accelerationResult.selectedBackend} (${accelerationResult.benchmarkTimeMs}ms)")
+
+            // Acceleration config is already applied during initialization
+            
+            // Store acceleration stats for UI display
+            val accelerationStats = AccelerationStats(
+                optimalBackend = accelerationResult.recommendedLlmBackend, // Backend recommended by Play Services
+                confidence = accelerationResult.confidence,
+                benchmarkTimeMs = accelerationResult.benchmarkTimeMs,
+                deviceModel = Build.MANUFACTURER + " " + Build.MODEL,
+                chipset = Build.HARDWARE,
+                cpuCores = Runtime.getRuntime().availableProcessors(),
+                hasGPU = true, // Most devices have GPU
+                hasNPU = accelerationResult.selectedBackend.contains("Tensor") || accelerationResult.selectedBackend.contains("NNAPI"),
+                hasNNAPI = accelerationResult.selectedBackend.contains("NNAPI"),
+                androidVersion = Build.VERSION.SDK_INT,
+                isCachedResult = false,
+                optimizations = listOf(
+                    AppliedOptimization(
+                        setting = "Acceleration Service",
+                        value = "Play Services TFLite",
+                        reason = "Dynamic GPU detection and configuration",
+                        expectedImprovement = "Optimal hardware utilization"
+                    ),
+                    AppliedOptimization(
+                        setting = "Selected Backend",
+                        value = accelerationResult.selectedBackend,
+                        reason = if (accelerationResult.gpuAvailable) "GPU verified available" else "GPU not available",
+                        expectedImprovement = "${(accelerationResult.confidence * 100).toInt()}% confidence"
+                    ),
+                    AppliedOptimization(
+                        setting = "Automatic Acceleration",
+                        value = if (accelerationResult.gpuAvailable) "Enabled" else "Disabled",
+                        reason = "Play Services runtime optimization",
+                        expectedImprovement = "Adaptive performance tuning"
+                    )
+                ),
+                playServicesEnabled = true // Now using Play Services!
+            )
+            _accelerationStats.value = accelerationStats
+
+            // Log Play Services acceleration info
+            Log.i(TAG, playServicesAcceleration.getAccelerationInfo())
+            Log.i(TAG, "✅ Backend: ${accelerationResult.selectedBackend}")
+            Log.i(TAG, "📊 Confidence: ${(accelerationResult.confidence * 100).toInt()}%")
+            Log.i(TAG, "⏱️ Configuration time: ${accelerationResult.benchmarkTimeMs}ms")
+            Log.i(TAG, "🎮 GPU Available: ${accelerationResult.gpuAvailable}")
+
+            // Step 2: Create the main LlmInference instance with optimal backend
             initMetrics.startSubPhase("AIInitialization", "CreateLlmInference")
+            // MediaPipe will use the initialized Play Services acceleration automatically
             val llmInferenceOptions = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(visionModelFile.absolutePath)
                 .setMaxTokens(800) // Reduced for faster JSON-only responses
                 .setMaxNumImages(1)
-                .setPreferredBackend(LlmInference.Backend.GPU) // Force GPU for best performance
+                // Note: MediaPipe internally selects the best backend
                 .build()
-            
-            Log.i(TAG, "LLM options configured with GPU backend")
+
+            Log.i(TAG, "Creating LlmInference with Play Services optimized runtime")
             visionLlmInference = LlmInference.createFromOptions(context, llmInferenceOptions)
-            initMetrics.endSubPhase("AIInitialization", "CreateLlmInference", "GPU backend")
+            initMetrics.endSubPhase("AIInitialization", "CreateLlmInference", accelerationResult.selectedBackend)
             Log.i(TAG, "Vision LLM instance created successfully.")
 
             // Define the options for creating individual sessions from the main instance.
@@ -154,7 +235,7 @@ class DefaultAppContainer(
                 enhancedNutrientDbHelper = EnhancedNutrientDbHelper(context, usdaApiService)
                 initMetrics.endSubPhase("AIInitialization", "NutritionDatabase", "Failed - using empty")
             }
-            
+
             // The PhotoMealExtractor is now ready to be created.
             initMetrics.startSubPhase("AIInitialization", "CreatePhotoMealExtractor")
             photoMealExtractor = PhotoMealExtractor(this, enhancedNutrientDbHelper, GsonProvider.instance)
@@ -172,7 +253,7 @@ class DefaultAppContainer(
             Log.e(TAG, "Error during AI component initialization", e)
             _isReady.update { false }
             initMetrics.endPhase("AIInitialization")
-            
+
             // Log the full initialization report even on failure
             Log.e(TAG, initMetrics.generateReport())
             throw e
@@ -206,7 +287,7 @@ class DefaultAppContainer(
             }
             initMetrics.endPhase("SessionPrewarming")
             Log.i(TAG, "🚀 Session pool ready!")
-            
+
             // Log the complete initialization report
             Log.i(TAG, "\n${initMetrics.generateReport()}")
         }
@@ -215,7 +296,7 @@ class DefaultAppContainer(
     /**
      * Gets a ready session from the pool or creates a new one if the pool is empty.
      * This is the key to providing a fast, responsive experience for the user.
-     * 
+     *
      * IMPORTANT: Sessions are single-use to avoid token accumulation issues.
      * Each session is used once and then discarded.
      */
@@ -276,10 +357,15 @@ class DefaultAppContainer(
             val visionModelFile = modelFiles[selectedVisionModel]
                 ?: throw IllegalStateException("New vision model file '$selectedVisionModel' not found.")
 
+            // Re-analyze acceleration for new model with Play Services
+            Log.i(TAG, "Re-analyzing acceleration with Play Services for new model...")
+            val accelerationResult = playServicesAcceleration.findOptimalAcceleration(visionModelFile.absolutePath)
+            Log.i(TAG, "Model switch using ${accelerationResult.selectedBackend} (confidence: ${(accelerationResult.confidence * 100).toInt()}%)")
+
+            // MediaPipe will use the re-initialized Play Services acceleration automatically
             val llmInferenceOptions = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(visionModelFile.absolutePath)
                 .setMaxTokens(800) // Match the token limit used in initialization
-                .setPreferredBackend(LlmInference.Backend.GPU)
                 .setMaxNumImages(1)
                 .build()
             visionLlmInference = LlmInference.createFromOptions(context, llmInferenceOptions)
@@ -297,6 +383,45 @@ class DefaultAppContainer(
     }
 
     /**
+     * Clears all sessions from the pool. This is useful when we need to ensure
+     * fresh sessions, such as after a cancellation.
+     */
+    override fun clearSessionPool() {
+        Log.w(TAG, "Clearing session pool to ensure fresh sessions")
+        synchronized(visionSessionPool) {
+            visionSessionPool.forEach { session ->
+                try {
+                    session.close()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error closing session during pool clear", e)
+                }
+            }
+            visionSessionPool.clear()
+        }
+
+        // Refill the pool with fresh sessions in the background
+        if (isPrewarmingActive && visionLlmInference != null && visionSessionOptions != null) {
+            backgroundScope.launch {
+                repeat(maxPoolSize) { index ->
+                    try {
+                        val session = LlmInferenceSession.createFromOptions(visionLlmInference!!, visionSessionOptions!!)
+                        synchronized(visionSessionPool) {
+                            if (visionSessionPool.size < maxPoolSize) {
+                                visionSessionPool.add(session)
+                                Log.d(TAG, "Added fresh session ${index + 1} to pool")
+                            } else {
+                                session.close()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to create fresh session ${index + 1}", e)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Called when the application is being destroyed to release all AI resources.
      */
     override fun onAppDestroy() {
@@ -307,5 +432,6 @@ class DefaultAppContainer(
         }
         visionLlmInference?.close()
         enhancedNutrientDbHelper.close()
+        playServicesAcceleration.cleanup()
     }
 }

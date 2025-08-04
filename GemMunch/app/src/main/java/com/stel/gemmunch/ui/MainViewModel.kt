@@ -51,7 +51,7 @@ class MainViewModel(
             initMetrics.startPhase("ViewModelInitialization")
             initializeAiComponents()
         }
-        
+
         // Check Health Connect status in parallel
         viewModelScope.launch {
             checkHealthConnectStatus()
@@ -195,6 +195,30 @@ class MainViewModel(
     fun refreshHealthConnectPermissions() {
         viewModelScope.launch {
             checkHealthConnectStatus()
+        }
+    }
+    
+    /**
+     * Clears acceleration cache and triggers re-analysis.
+     */
+    fun reanalyzeAcceleration() {
+        viewModelScope.launch(Dispatchers.IO) {
+            Log.i(TAG, "User requested acceleration re-analysis")
+            
+            try {
+                // Run comprehensive acceleration test
+                Log.i(TAG, "Running comprehensive acceleration API test...")
+                val tester = com.stel.gemmunch.utils.ComprehensiveAccelerationTest(application)
+                tester.runAllTests()
+                
+                // Update UI state to show that re-analysis was requested
+                _uiState.update { it.copy(
+                    initializationProgress = "Acceleration test complete - check logs"
+                )}
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to handle re-analysis request", e)
+            }
         }
     }
 }

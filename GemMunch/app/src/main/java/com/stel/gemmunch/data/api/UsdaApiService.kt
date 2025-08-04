@@ -113,7 +113,79 @@ class UsdaApiService {
         }
     }
 
+    /**
+     * Searches for a food and returns complete nutrition information.
+     * This is an enhanced version that returns all nutrients, not just calories.
+     */
+    suspend fun searchAndGetFullNutrition(foodName: String): UsdaNutritionData? {
+        try {
+            // 1. Search for the food
+            val searchRequest = UsdaSearchRequest(query = foodName)
+            val searchResponse = api.searchFoods(apiKey, searchRequest)
+            if (!searchResponse.isSuccessful || searchResponse.body()?.foods.isNullOrEmpty()) {
+                Log.w(TAG, "No USDA search results for '$foodName'")
+                return null
+            }
+
+            // 2. Get the best match (highest score from a reliable data type)
+            val bestMatch = searchResponse.body()!!.foods
+                .filter { it.dataType in listOf("Foundation", "SR Legacy") }
+                .maxByOrNull { it.score }
+                ?: searchResponse.body()!!.foods.first()
+
+            // 3. Get detailed nutrition info for the best match
+            val detailsResponse = api.getFoodDetails(bestMatch.fdcId, apiKey)
+            if (!detailsResponse.isSuccessful) {
+                Log.w(TAG, "Failed to get details for FDC ID ${bestMatch.fdcId}")
+                return null
+            }
+
+            // 4. Extract all nutrients
+            val foodDetails = detailsResponse.body()
+            if (foodDetails == null) {
+                Log.w(TAG, "No food details in response for '$foodName'")
+                return null
+            }
+            
+            // Extract key nutrients (per 100g)
+            val nutrients = foodDetails.foodNutrients
+            
+            return UsdaNutritionData(
+                foodName = foodDetails.description,
+                calories = foodDetails.getCaloriesPer100g().toInt(),
+                protein = nutrients.find { it.nutrient.name == "Protein" }?.amount,
+                totalFat = nutrients.find { it.nutrient.name == "Total lipid (fat)" }?.amount,
+                saturatedFat = nutrients.find { it.nutrient.name == "Fatty acids, total saturated" }?.amount,
+                cholesterol = nutrients.find { it.nutrient.name == "Cholesterol" }?.amount,
+                sodium = nutrients.find { it.nutrient.name == "Sodium, Na" }?.amount,
+                totalCarbs = nutrients.find { it.nutrient.name == "Carbohydrate, by difference" }?.amount,
+                dietaryFiber = nutrients.find { it.nutrient.name == "Fiber, total dietary" }?.amount,
+                sugars = nutrients.find { it.nutrient.name == "Total Sugars" }?.amount
+            )
+
+        } catch (e: Exception) {
+            Log.e(TAG, "USDA full nutrition lookup failed for '$foodName'", e)
+            return null
+        }
+    }
+
     fun isConfigured(): Boolean {
         return apiKey.isNotBlank() && apiKey != "YOUR_API_KEY_HERE"
     }
 }
+
+/**
+ * Data class to hold complete nutrition information from USDA
+ */
+data class UsdaNutritionData(
+    val foodName: String,
+    val calories: Int,
+    val protein: Double? = null,
+    val totalFat: Double? = null,
+    val saturatedFat: Double? = null,
+    val cholesterol: Double? = null,
+    val sodium: Double? = null,
+    val totalCarbs: Double? = null,
+    val dietaryFiber: Double? = null,
+    val sugars: Double? = null
+)

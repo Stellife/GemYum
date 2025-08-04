@@ -2,6 +2,42 @@
 
 
 
+* Once image is taken:
+- Keep image while processing
+- Keep the image in the review screen at the top of the screen.
+
+
+**GOOGLE SHEET ANALYTICS TO TRACK TEAM USAGE:**
+
+  SpreadsheetID: 1KdGhe-XLkCXmEb8surAdtksgSAHqIpU3LAx8iE3X0qY
+  Service email:  gemmunch-analytics-writer@gemmunch-analytics.iam.gserviceaccount.com
+  ProjectID: gemmunch-analytics
+  
+  GoogleSheets: https://docs.google.com/spreadsheets/d/1KdGhe-XLkCXmEb8surAdtksgSAHqIpU3LAx8iE3X0qY/edit?gid=0#gid=0
+  Google Cloud: https://console.cloud.google.com/iam-admin/serviceaccounts/details/108505913029094852264;edit=true?previousPage=%2Fapis%2Fcredentials%3Finv%3D1%26invt%3DAb4I8A%26project%3Dgemmunch-analytics&inv=1&invt=Ab4I8A&project=gemmunch-analytics
+
+  When you're ready to continue, we'll:
+    1. Add the Sheets API dependencies
+    2. Create the AnalyticsService
+    3. Store your credentials securely
+    4. Wire it into your feedback flow
+
+
+
+
+
+
+
+
+==========================================================================
+
+
+
+
+
+
+
+
 
 **Additional Models:** - They're currently only TEXT preview.
 * Gemma 3N-E2B-lm - https://huggingface.co/google/gemma-3n-E4B-it-litert-lm-preview

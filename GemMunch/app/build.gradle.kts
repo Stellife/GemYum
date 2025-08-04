@@ -5,6 +5,8 @@ plugins {
     alias(libs.plugins.jetbrains.kotlin.compose)
     alias(libs.plugins.jetbrains.kotlin.serialization)
 
+
+
 }
 
 android {
@@ -97,7 +99,11 @@ dependencies {
     implementation(libs.google.ai.edge.localagents.fc)  // Function‑Calling SDK
     implementation(libs.google.ai.edge.localagents.rag) // RAG AI-EDGE SDK
     implementation("com.google.mediapipe:tasks-vision:latest.release")
-
+    
+    // ---- TensorFlow Lite via Google Play Services ----
+    // Using Play Services TensorFlow Lite (see dependencies below at lines 134-138)
+    // This provides better integration and automatic updates
+    
     // Utils
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.gson)
@@ -124,8 +130,15 @@ dependencies {
     implementation(libs.androidx.room.ktx) // Provides Coroutine support
     ksp(libs.androidx.room.compiler)
 
-    // AI Edge Function Calling SDK
+    // Google Play Services TensorFlow Lite
+    implementation("com.google.android.gms:play-services-base:18.7.2")
     implementation("com.google.android.gms:play-services-tflite-java:16.4.0")
+    implementation("com.google.android.gms:play-services-tflite-gpu:16.4.0")
+    implementation("com.google.android.gms:play-services-tflite-support:16.4.0")
+    implementation("com.google.android.gms:play-services-tflite-acceleration-service:16.0.0-beta01")
+
+
+
 
 
     implementation("com.squareup.okhttp3:okhttp:5.1.0")

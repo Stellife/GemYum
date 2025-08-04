@@ -23,8 +23,7 @@ googleAiEdgeAicore = "0.0.1-exp02"
 mediapipeTasksGenai = "0.10.25"
 localagentsFc = "0.1.0"
 localagentsRag = "0.2.0"
-litertApi = "1.4.0"
-
+# litertApi = "1.4.0" # Removed due to conflicts with TensorFlow Lite
 
 
 [libraries]
@@ -61,7 +60,11 @@ google-ai-edge-aicore = { group = "com.google.ai.edge.aicore", name = "aicore", 
 google-ai-edge-localagents-fc = { group = "com.google.ai.edge.localagents", name = "localagents-fc", version.ref = "localagentsFc" }
 google-ai-edge-localagents-rag = { group = "com.google.ai.edge.localagents", name = "localagents-rag", version.ref = "localagentsRag" }
 google-mediapipe-tasks-genai = { group = "com.google.mediapipe", name = "tasks-genai", version.ref = "mediapipeTasksGenai" }
-litert-api = { group = "com.google.ai.edge.litert", name = "litert-api", version.ref = "litertApi" }
+# LiteRT dependencies removed due to conflicts with TensorFlow Lite
+# litert-api = { group = "com.google.ai.edge.litert", name = "litert-api", version.ref = "litertApi" }
+# tflite-gpu = { module = "com.google.ai.edge.litert:litert-gpu", version.ref = "litertApi" }
+# tflite-gpu-api = { module = "com.google.ai.edge.litert:litert-gpu-api", version.ref = "litertApi" }
+
 
 # Health Connect
 androidx-health-connect = { group = "androidx.health.connect", name = "connect-client", version.ref = "healthConnect" }
@@ -74,6 +77,7 @@ jetbrains-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = 
 google-ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 jetbrains-kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 jetbrains-kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+
 
 
 [bundles]

@@ -30,6 +30,7 @@ import com.stel.gemmunch.utils.VisionModelPreferencesManager
 import com.stel.gemmunch.utils.MediaQualityPreferencesManager
 import com.stel.gemmunch.utils.ImageReasoningPreferencesManager
 import com.stel.gemmunch.data.models.*
+import com.stel.gemmunch.ui.components.ManualNutritionEntry
 import java.time.ZoneId
 import java.time.Instant
 import java.time.LocalDateTime
@@ -45,6 +46,16 @@ import android.util.Log
 import android.widget.Toast
 
 private const val TAG = "CameraFoodCaptureScreen"
+
+// Data class to track Health Connect selections
+data class HealthConnectItemSelection(
+    val itemId: String, // Unique identifier for the item
+    val itemType: String, // "ai" or "manual"
+    val itemIndex: Int, // Index in the original list
+    val foodName: String,
+    val calories: Int,
+    val isSelected: Boolean = true
+)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
@@ -67,6 +78,10 @@ fun CameraFoodCaptureScreen(
     
     // Meal timing state (shared across all items)
     var mealTiming by remember { mutableStateOf(MealTiming()) }
+    
+    // Health Connect state
+    var writeToHealthConnect by remember { mutableStateOf(false) }
+    var healthConnectItemSelections by remember { mutableStateOf<List<HealthConnectItemSelection>>(emptyList()) }
     
     // Use ViewModel to track photo metadata (persists across navigation)
     var isFromGallery by remember { mutableStateOf(foodViewModel.isFromGallery) }
@@ -138,14 +153,14 @@ fun CameraFoodCaptureScreen(
         onResult = { uri: Uri? ->
             uri?.let { 
                 isFromGallery = true
-                // Generate unique ID for this photo session
-                photoUniqueId = "photo_${System.currentTimeMillis()}_${uri.hashCode()}"
+                // Generate unique ID based on URI hash (consistent for same photo)
+                photoUniqueId = "gallery_photo_${uri.hashCode()}"
                 photoTimestamp = extractExifTimestamp(context, uri)
                 // Update ViewModel
                 foodViewModel.isFromGallery = true
                 foodViewModel.photoUniqueId = photoUniqueId
                 foodViewModel.photoTimestamp = photoTimestamp
-                Log.d(TAG, "Setting photoUniqueId for gallery: $photoUniqueId, photoTimestamp: $photoTimestamp")
+                Log.d(TAG, "Setting photoUniqueId for gallery: $photoUniqueId (uri: $uri, hash: ${uri.hashCode()}), photoTimestamp: $photoTimestamp")
                 navController.navigate("imageCrop/${Uri.encode(it.toString())}") 
             }
         }
@@ -209,7 +224,28 @@ fun CameraFoodCaptureScreen(
             
             when (val state = uiState) {
                 is FoodCaptureState.Idle -> {
-                    // Show initialization metrics at the top
+                    // Show acceleration stats at the top
+                    item {
+                        val accelerationStats by mainViewModel.appContainer.accelerationStats.collectAsStateWithLifecycle()
+                        accelerationStats?.let { stats ->
+                            AccelerationStatsCard(
+                                accelerationStats = stats,
+                                onReanalyze = {
+                                    // Clear cache and trigger re-initialization
+                                    mainViewModel.reanalyzeAcceleration()
+                                }
+                            )
+                        }
+                    }
+                    
+                    item { 
+                        val accelerationStats by mainViewModel.appContainer.accelerationStats.collectAsStateWithLifecycle()
+                        if (accelerationStats != null) {
+                            Spacer(modifier = Modifier.height(8.dp)) 
+                        }
+                    }
+                    
+                    // Show initialization metrics
                     item {
                         InitializationMetricsCard(
                             metricsFlow = mainViewModel.initMetricsUpdates
@@ -243,6 +279,14 @@ fun CameraFoodCaptureScreen(
                     
                     item {
                         ImageReasoningModeCard()
+                    }
+                    
+                    item {
+                        val contextText by foodViewModel.contextText.collectAsStateWithLifecycle()
+                        ContextTextInputCard(
+                            contextText = contextText,
+                            onContextTextChange = { foodViewModel.updateContextText(it) }
+                        )
                     }
                     
                     item {
@@ -471,6 +515,7 @@ fun CameraFoodCaptureScreen(
                                     item = item,
                                     itemIndex = index,
                                     feedback = itemFeedbacks[index] ?: ItemFeedback(itemIndex = index),
+                                    nutritionSearchService = mainViewModel.appContainer.nutritionSearchService,
                                     onFeedbackUpdate = { updatedFeedback ->
                                         itemFeedbacks = itemFeedbacks + (index to updatedFeedback)
                                     }
@@ -488,11 +533,137 @@ fun CameraFoodCaptureScreen(
                             )
                         }
                         
+                        // Health Connect Section (single, consolidated)
+                        if (mainUiState.healthConnectPermissionsGranted) {
+                            item {
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                                    )
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        // Header with toggle
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                "Health Connect",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Switch(
+                                                checked = writeToHealthConnect,
+                                                onCheckedChange = { checked ->
+                                                    writeToHealthConnect = checked
+                                                    if (checked && healthConnectItemSelections.isEmpty()) {
+                                                        // Initialize selections when first enabled
+                                                        val selections = mutableListOf<HealthConnectItemSelection>()
+                                                        
+                                                        // Add AI items
+                                                        state.editableItems.forEachIndexed { index, item ->
+                                                            selections.add(
+                                                                HealthConnectItemSelection(
+                                                                    itemId = "ai_$index",
+                                                                    itemType = "ai",
+                                                                    itemIndex = index,
+                                                                    foodName = item.foodName,
+                                                                    calories = item.calories,
+                                                                    isSelected = true
+                                                                )
+                                                            )
+                                                        }
+                                                        
+                                                        // Add manual items
+                                                        itemFeedbacks.forEach { (feedbackIndex, feedback) ->
+                                                            feedback.manualItems.forEachIndexed { manualIndex, manualItem ->
+                                                                selections.add(
+                                                                    HealthConnectItemSelection(
+                                                                        itemId = "manual_${feedbackIndex}_$manualIndex",
+                                                                        itemType = "manual",
+                                                                        itemIndex = manualIndex,
+                                                                        foodName = manualItem.foodName,
+                                                                        calories = manualItem.calories,
+                                                                        isSelected = true
+                                                                    )
+                                                                )
+                                                            }
+                                                        }
+                                                        
+                                                        healthConnectItemSelections = selections
+                                                    }
+                                                }
+                                            )
+                                        }
+                                        
+                                        if (writeToHealthConnect && healthConnectItemSelections.isNotEmpty()) {
+                                            Text(
+                                                "Items to include:",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            
+                                            // Item selection checkboxes
+                                            healthConnectItemSelections.forEach { selection ->
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(vertical = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Checkbox(
+                                                        checked = selection.isSelected,
+                                                        onCheckedChange = { checked ->
+                                                            healthConnectItemSelections = healthConnectItemSelections.map {
+                                                                if (it.itemId == selection.itemId) {
+                                                                    it.copy(isSelected = checked)
+                                                                } else it
+                                                            }
+                                                        }
+                                                    )
+                                                    Text(
+                                                        "${selection.foodName} (${selection.calories} cal) - ${if (selection.itemType == "ai") "AI detected" else "User added"}",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        modifier = Modifier.padding(start = 8.dp)
+                                                    )
+                                                }
+                                            }
+                                            
+                                            // Total calories for selected items
+                                            val selectedCalories = healthConnectItemSelections
+                                                .filter { it.isSelected }
+                                                .sumOf { it.calories }
+                                            
+                                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                                            
+                                            Text(
+                                                "Total to write: $selectedCalories calories",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
                         // Total calories and buttons
                         item {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Spacer(Modifier.height(16.dp))
-                                val totalCalories = state.editableItems.sumOf { it.calories }
+                                val aiCalories = state.editableItems.sumOf { it.calories }
+                                val manualCalories = itemFeedbacks.values
+                                    .flatMap { it.manualItems }
+                                    .sumOf { it.calories }
+                                val totalCalories = aiCalories + manualCalories
                                 Text("Estimated Total: $totalCalories Calories", style = MaterialTheme.typography.titleLarge)
                                 Spacer(Modifier.height(16.dp))
                                 
@@ -534,55 +705,111 @@ fun CameraFoodCaptureScreen(
                                                             isFromGallery = isFromGallery,
                                                             photoUniqueId = photoUniqueId,
                                                             photoTimestamp = photoTimestamp,
-                                                            analyzedBitmap = state.analyzedBitmap
+                                                            analyzedBitmap = state.analyzedBitmap,
+                                                            writeToHealthConnect = writeToHealthConnect,
+                                                            wasWrittenToHealthConnect = false // Will be updated after HC write
                                                         )
                                                         val documentId = feedbackService.storeFeedback(feedbackDoc)
                                                         if (documentId != null) {
                                                             Log.i("FeedbackScreen", "Stored feedback for ${item.foodName}: score=${feedback.overallScore}")
                                                             
-                                                            // Write to Health Connect if requested
-                                                            if (feedback.healthConnectWriteChoice == HealthConnectWriteChoice.WRITE_COMPUTED_VALUES ||
-                                                                feedback.healthConnectWriteChoice == HealthConnectWriteChoice.WRITE_USER_VALUES) {
+                                                            // Note: Health Connect write is now handled after all items are saved
+                                                        }
+                                                    }
+                                                }
+                                                
+                                                // Write to Health Connect if enabled (consolidated single entry)
+                                                if (writeToHealthConnect && healthConnectItemSelections.any { it.isSelected }) {
+                                                    val healthConnect = mainViewModel.appContainer.healthConnectManager
+                                                    if (healthConnect.isHealthConnectAvailable() && mainUiState.healthConnectPermissionsGranted) {
+                                                        val selectedItems = mutableListOf<AnalyzedFoodItem>()
+                                                        
+                                                        // Collect selected AI items with user corrections applied
+                                                        healthConnectItemSelections
+                                                            .filter { it.isSelected && it.itemType == "ai" }
+                                                            .forEach { selection ->
+                                                                val item = state.editableItems[selection.itemIndex]
+                                                                val feedback = itemFeedbacks[selection.itemIndex]
                                                                 
-                                                                val healthConnect = mainViewModel.appContainer.healthConnectManager
-                                                                if (healthConnect.isHealthConnectAvailable() && 
-                                                                    mainUiState.healthConnectPermissionsGranted) {
-                                                                    
-                                                                    val itemsToWrite = if (feedback.healthConnectWriteChoice == HealthConnectWriteChoice.WRITE_USER_VALUES && 
-                                                                        feedback.providingCorrections && 
-                                                                        feedback.correctedValues.isNotEmpty()) {
-                                                                        // Create a modified item with user-provided values
-                                                                        listOf(item.copy(
-                                                                            calories = feedback.correctedValues["Calories"]?.toIntOrNull() ?: item.calories,
-                                                                            protein = feedback.correctedValues["Protein"]?.toDoubleOrNull() ?: item.protein,
-                                                                            totalFat = feedback.correctedValues["Total Fat"]?.toDoubleOrNull() ?: item.totalFat,
-                                                                            totalCarbs = feedback.correctedValues["Carbohydrates"]?.toDoubleOrNull() ?: item.totalCarbs,
-                                                                            sodium = feedback.correctedValues["Sodium"]?.toDoubleOrNull() ?: item.sodium
-                                                                        ))
-                                                                    } else {
-                                                                        listOf(item)
-                                                                    }
-                                                                    
-                                                                    val success = healthConnect.writeNutritionRecords(
-                                                                        items = itemsToWrite,
-                                                                        mealDateTime = mealDateTime ?: Instant.now()
+                                                                // Apply user corrections if provided
+                                                                val correctedItem = if (feedback != null && 
+                                                                    feedback.providingCorrections && 
+                                                                    feedback.correctedValues.isNotEmpty()) {
+                                                                    item.copy(
+                                                                        calories = feedback.correctedValues["Calories"]?.toIntOrNull() ?: item.calories,
+                                                                        protein = feedback.correctedValues["Protein"]?.toDoubleOrNull() ?: item.protein,
+                                                                        totalFat = feedback.correctedValues["Total Fat"]?.toDoubleOrNull() ?: item.totalFat,
+                                                                        totalCarbs = feedback.correctedValues["Carbohydrates"]?.toDoubleOrNull() ?: item.totalCarbs,
+                                                                        sodium = feedback.correctedValues["Sodium"]?.toDoubleOrNull() ?: item.sodium
                                                                     )
-                                                                    
-                                                                    if (success) {
-                                                                        Log.i("FeedbackScreen", "Successfully wrote ${item.foodName} to Health Connect")
-                                                                    } else {
-                                                                        Log.e("FeedbackScreen", "Failed to write ${item.foodName} to Health Connect")
-                                                                    }
                                                                 } else {
-                                                                    Log.w("FeedbackScreen", "Health Connect not available or permissions not granted")
+                                                                    item
                                                                 }
+                                                                selectedItems.add(correctedItem)
+                                                            }
+                                                        
+                                                        // Collect selected manual items
+                                                        itemFeedbacks.forEach { (feedbackIndex, feedback) ->
+                                                            feedback.manualItems.forEachIndexed { manualIndex, manualItem ->
+                                                                val itemId = "manual_${feedbackIndex}_$manualIndex"
+                                                                if (healthConnectItemSelections.any { it.itemId == itemId && it.isSelected }) {
+                                                                    selectedItems.add(manualItem)
+                                                                }
+                                                            }
+                                                        }
+                                                        
+                                                        // Combine all selected items into a single entry
+                                                        if (selectedItems.isNotEmpty()) {
+                                                            val itemsToWrite = if (selectedItems.size > 1) {
+                                                                val nutritionSearchService = mainViewModel.appContainer.nutritionSearchService
+                                                                listOf(nutritionSearchService.combineNutritionData(selectedItems))
+                                                            } else {
+                                                                selectedItems
+                                                            }
+                                                            
+                                                            val mealDateTime = when (mealTiming.option) {
+                                                                MealTimingOption.USE_PHOTO_TIME -> {
+                                                                    when {
+                                                                        !isFromGallery -> Instant.now()
+                                                                        photoTimestamp != null -> photoTimestamp
+                                                                        else -> Instant.now()
+                                                                    }
+                                                                }
+                                                                MealTimingOption.CUSTOM_TIME -> {
+                                                                    mealTiming.customDateTime?.atZone(ZoneId.systemDefault())?.toInstant() ?: Instant.now()
+                                                                }
+                                                            }
+                                                            
+                                                            val success = healthConnect.writeNutritionRecords(
+                                                                items = itemsToWrite,
+                                                                mealDateTime = mealDateTime ?: Instant.now()
+                                                            )
+                                                            
+                                                            if (success) {
+                                                                Log.i("FeedbackScreen", "Successfully wrote combined meal to Health Connect")
+                                                            } else {
+                                                                Log.e("FeedbackScreen", "Failed to write to Health Connect")
                                                             }
                                                         }
                                                     }
                                                 }
                                                 
-                                                // Save the meal
-                                                foodViewModel.saveMeal(context)
+                                                // Calculate total calories including manual items
+                                                val aiCalories = state.editableItems.sumOf { it.calories }
+                                                val manualCalories = itemFeedbacks.values
+                                                    .flatMap { it.manualItems }
+                                                    .sumOf { it.calories }
+                                                val totalCalories = aiCalories + manualCalories
+                                                
+                                                // Show confirmation with total calories
+                                                Toast.makeText(
+                                                    context, 
+                                                    "Meal with $totalCalories Calories saved!",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                                
+                                                // Reset the view model
+                                                foodViewModel.reset()
                                             }
                                         }, 
                                         enabled = state.editableItems.isNotEmpty()
@@ -619,7 +846,9 @@ private fun buildFeedbackDocument(
     isFromGallery: Boolean,
     photoUniqueId: String?,
     photoTimestamp: Instant?,
-    analyzedBitmap: Bitmap?
+    analyzedBitmap: Bitmap?,
+    writeToHealthConnect: Boolean = false,
+    wasWrittenToHealthConnect: Boolean = false
 ): MealAnalysisFeedback {
     // Determine meal time and source
     val (mealDateTime, mealDateTimeSource) = when (mealTiming.option) {
@@ -702,7 +931,38 @@ private fun buildFeedbackDocument(
                 informationSource = itemFeedback.nutritionSource.takeIf { it.isNotBlank() }
             )
         } else null,
-        healthConnectWriteIntention = itemFeedback.healthConnectWriteChoice,
+        manuallyAddedItems = itemFeedback.manualItems.map { manualItem ->
+            ManualFoodItem(
+                foodName = manualItem.foodName,
+                quantity = manualItem.quantity,
+                unit = manualItem.unit,
+                source = "user_search",
+                nutritionalInfo = NutritionalInfo(
+                    calories = manualItem.calories,
+                    caloriesDV = calculateDailyValue(manualItem.calories.toDouble(), 2000.0),
+                    protein = manualItem.protein,
+                    proteinDV = manualItem.protein?.let { calculateDailyValue(it, 50.0) },
+                    totalFat = manualItem.totalFat,
+                    totalFatDV = manualItem.totalFat?.let { calculateDailyValue(it, 78.0) },
+                    saturatedFat = manualItem.saturatedFat,
+                    saturatedFatDV = manualItem.saturatedFat?.let { calculateDailyValue(it, 20.0) },
+                    cholesterol = manualItem.cholesterol,
+                    cholesterolDV = manualItem.cholesterol?.let { calculateDailyValue(it, 300.0) },
+                    sodium = manualItem.sodium,
+                    sodiumDV = manualItem.sodium?.let { calculateDailyValue(it, 2300.0) },
+                    totalCarbs = manualItem.totalCarbs,
+                    totalCarbsDV = manualItem.totalCarbs?.let { calculateDailyValue(it, 275.0) },
+                    dietaryFiber = manualItem.dietaryFiber,
+                    dietaryFiberDV = manualItem.dietaryFiber?.let { calculateDailyValue(it, 28.0) },
+                    sugars = manualItem.sugars,
+                    glycemicIndex = manualItem.glycemicIndex,
+                    glycemicLoad = manualItem.glycemicLoad
+                )
+            )
+        }.takeIf { it.isNotEmpty() },
+        healthConnectWriteIntention = if (writeToHealthConnect) HealthConnectWriteChoice.WRITE_COMPUTED_VALUES else HealthConnectWriteChoice.DO_NOT_WRITE,
+        healthConnectDataSources = null, // Now tracked at meal level, not item level
+        wasWrittenToHealthConnect = wasWrittenToHealthConnect,
         imageMetadata = ImageMetadata(
             originalImagePath = null, // Not available in current implementation
             imageWidth = analyzedBitmap?.width ?: 0,
@@ -714,9 +974,7 @@ private fun buildFeedbackDocument(
             imageConfig = analyzedBitmap?.config?.name ?: "UNKNOWN",
             hasAlpha = analyzedBitmap?.hasAlpha() ?: false
         ),
-        photoUniqueId = photoUniqueId,
-        wasWrittenToHealthConnect = itemFeedback.healthConnectWriteChoice != null && 
-            itemFeedback.healthConnectWriteChoice != HealthConnectWriteChoice.DO_NOT_WRITE
+        photoUniqueId = photoUniqueId
     )
 }
 
@@ -1344,7 +1602,9 @@ private fun buildErrorFeedbackDocument(
         humanErrorNotes = "AI failed to parse response: ${mealAnalysis.errorMessage}",
         restaurantMealDetails = null,
         humanCorrectedNutrition = null,
+        manuallyAddedItems = null, // No manual items for errors
         healthConnectWriteIntention = HealthConnectWriteChoice.DO_NOT_WRITE, // Don't write errors
+        healthConnectDataSources = null, // No data sources for errors
         wasWrittenToHealthConnect = false,
         imageMetadata = ImageMetadata(
             originalImagePath = null,
@@ -1359,4 +1619,169 @@ private fun buildErrorFeedbackDocument(
         ),
         photoUniqueId = photoUniqueId
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ContextTextInputCard(
+    contextText: String,
+    onContextTextChange: (String) -> Unit
+) {
+    // Helper function to add text without duplicates
+    fun addToContext(newItem: String) {
+        val cleanText = contextText.trim().removeSuffix(",").trim()
+        val newText = when {
+            cleanText.isEmpty() -> newItem
+            cleanText.contains(newItem, ignoreCase = true) -> cleanText // Don't add duplicate
+            else -> "$cleanText, $newItem"
+        }
+        onContextTextChange(newText)
+    }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                text = "Additional Context (Optional)",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Spacer(Modifier.height(8.dp))
+            
+            OutlinedTextField(
+                value = contextText,
+                onValueChange = onContextTextChange,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { 
+                    Text("e.g., \"Chipotle crispy tacos, chicken, hot salsa, cheese\"") 
+                },
+                supportingText = { 
+                    Text(
+                        text = "Describe the restaurant, meal type, or specific items. Use suggestions below to add details.",
+                        style = MaterialTheme.typography.bodySmall
+                    ) 
+                },
+                keyboardOptions = KeyboardOptions.Default,
+                maxLines = 4,
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Notes,
+                        contentDescription = "Context notes",
+                        tint = MaterialTheme.colorScheme.outline
+                    )
+                },
+                trailingIcon = if (contextText.isNotEmpty()) {
+                    {
+                        IconButton(
+                            onClick = { onContextTextChange("") }
+                        ) {
+                            Icon(
+                                Icons.Default.Clear,
+                                contentDescription = "Clear context",
+                                tint = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
+                } else null
+            )
+            
+            // Always show suggestions - they help build detailed context
+            Spacer(Modifier.height(12.dp))
+            
+            Text(
+                text = "Add context:",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            
+            Spacer(Modifier.height(6.dp))
+            
+            // Restaurant suggestions
+            Text(
+                text = "Restaurants:",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                SuggestionChip(
+                    onClick = { addToContext("Chipotle") },
+                    label = { Text("Chipotle", style = MaterialTheme.typography.labelSmall) }
+                )
+                SuggestionChip(
+                    onClick = { addToContext("Mexican") },
+                    label = { Text("Mexican", style = MaterialTheme.typography.labelSmall) }
+                )
+                SuggestionChip(
+                    onClick = { addToContext("fast food") },
+                    label = { Text("Fast food", style = MaterialTheme.typography.labelSmall) }
+                )
+            }
+            
+            Spacer(Modifier.height(8.dp))
+            
+            // Food items suggestions
+            Text(
+                text = "Common items:",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                SuggestionChip(
+                    onClick = { addToContext("crispy tacos") },
+                    label = { Text("Crispy tacos", style = MaterialTheme.typography.labelSmall) }
+                )
+                SuggestionChip(
+                    onClick = { addToContext("chicken") },
+                    label = { Text("Chicken", style = MaterialTheme.typography.labelSmall) }
+                )
+                SuggestionChip(
+                    onClick = { addToContext("bowl") },
+                    label = { Text("Bowl", style = MaterialTheme.typography.labelSmall) }
+                )
+            }
+            
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                SuggestionChip(
+                    onClick = { addToContext("hot salsa") },
+                    label = { Text("Hot salsa", style = MaterialTheme.typography.labelSmall) }
+                )
+                SuggestionChip(
+                    onClick = { addToContext("cheese") },
+                    label = { Text("Cheese", style = MaterialTheme.typography.labelSmall) }
+                )
+                SuggestionChip(
+                    onClick = { addToContext("sour cream") },
+                    label = { Text("Sour cream", style = MaterialTheme.typography.labelSmall) }
+                )
+            }
+            
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                SuggestionChip(
+                    onClick = { addToContext("lettuce") },
+                    label = { Text("Lettuce", style = MaterialTheme.typography.labelSmall) }
+                )
+                SuggestionChip(
+                    onClick = { addToContext("rice") },
+                    label = { Text("Rice", style = MaterialTheme.typography.labelSmall) }
+                )
+                SuggestionChip(
+                    onClick = { addToContext("beans") },
+                    label = { Text("Beans", style = MaterialTheme.typography.labelSmall) }
+                )
+            }
+        }
+    }
 }

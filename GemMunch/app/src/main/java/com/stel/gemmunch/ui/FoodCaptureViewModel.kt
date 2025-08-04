@@ -1,9 +1,7 @@
 package com.stel.gemmunch.ui
 
-import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
-import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -50,6 +48,14 @@ class FoodCaptureViewModel(
     var photoUniqueId: String? = null
     var photoTimestamp: Instant? = null
     var isFromGallery: Boolean = false
+    
+    // User context text for enhanced analysis
+    private val _contextText = MutableStateFlow("")
+    val contextText: StateFlow<String> = _contextText.asStateFlow()
+    
+    fun updateContextText(newText: String) {
+        _contextText.value = newText
+    }
 
     fun analyzeMealPhoto(bitmap: Bitmap) {
         val extractor = appContainer.photoMealExtractor ?: run {
@@ -61,7 +67,7 @@ class FoodCaptureViewModel(
             _uiState.value = FoodCaptureState.Loading
             try {
                 val resultAnalysis = withContext(Dispatchers.IO) {
-                    extractor.extract(bitmap)
+                    extractor.extract(bitmap, _contextText.value.takeIf { it.isNotBlank() })
                 }
                 
                 // Always go to Success state, even for errors, so user can provide feedback
@@ -147,17 +153,6 @@ class FoodCaptureViewModel(
         }
     }
 
-    fun saveMeal(context: Context) {
-        val currentState = _uiState.value
-        if (currentState is FoodCaptureState.Success) {
-            val totalCalories = currentState.editableItems.sumOf { it.calories }
-            // Show confirmation toast
-            Toast.makeText(context, "Meal with $totalCalories Calories saved!", Toast.LENGTH_LONG).show()
-            
-            // Reset to idle state after saving
-            reset()
-        }
-    }
     
     fun onFeedbackNavigated() {
         // Reset the navigation flag without clearing the analysis
@@ -175,6 +170,12 @@ class FoodCaptureViewModel(
         photoUniqueId = null
         photoTimestamp = null
         isFromGallery = false
+        // Clear context text
+        _contextText.value = ""
+        
+        // Clear the session pool to ensure fresh sessions for the next analysis
+        // This prevents crashes when reusing sessions after cancellation
+        appContainer.clearSessionPool()
     }
 }
 
