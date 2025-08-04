@@ -159,7 +159,7 @@ class DefaultAppContainer(
             
             // Store acceleration stats for UI display
             val accelerationStats = AccelerationStats(
-                optimalBackend = accelerationResult.recommendedLlmBackend, // Backend recommended by Play Services
+                optimalBackend = accelerationResult.recommendedLlmBackend, // Use detected optimal backend
                 confidence = accelerationResult.confidence,
                 benchmarkTimeMs = accelerationResult.benchmarkTimeMs,
                 deviceModel = Build.MANUFACTURER + " " + Build.MODEL,
@@ -172,22 +172,22 @@ class DefaultAppContainer(
                 isCachedResult = false,
                 optimizations = listOf(
                     AppliedOptimization(
-                        setting = "Acceleration Service",
-                        value = "Play Services TFLite",
-                        reason = "Dynamic GPU detection and configuration",
-                        expectedImprovement = "Optimal hardware utilization"
+                        setting = "LLM Backend",
+                        value = if (accelerationResult.gpuAvailable) "GPU Acceleration" else "CPU with XNNPACK",
+                        reason = "MediaPipe LLM inference with optimal hardware backend",
+                        expectedImprovement = if (accelerationResult.gpuAvailable) "GPU-accelerated inference" else "Optimized CPU performance"
                     ),
                     AppliedOptimization(
-                        setting = "Selected Backend",
-                        value = accelerationResult.selectedBackend,
-                        reason = if (accelerationResult.gpuAvailable) "GPU verified available" else "GPU not available",
-                        expectedImprovement = "${(accelerationResult.confidence * 100).toInt()}% confidence"
+                        setting = "GPU Detection",
+                        value = if (accelerationResult.gpuAvailable) "Available & Active" else "Not Available",
+                        reason = "Play Services TFLite GPU delegate verification",
+                        expectedImprovement = if (accelerationResult.gpuAvailable) "Hardware-accelerated LLM" else "CPU optimization"
                     ),
                     AppliedOptimization(
-                        setting = "Automatic Acceleration",
-                        value = if (accelerationResult.gpuAvailable) "Enabled" else "Disabled",
-                        reason = "Play Services runtime optimization",
-                        expectedImprovement = "Adaptive performance tuning"
+                        setting = "Play Services TFLite",
+                        value = "Enabled",
+                        reason = "Provides GPU and CPU optimizations",
+                        expectedImprovement = "Enhanced performance across backends"
                     )
                 ),
                 playServicesEnabled = true // Now using Play Services!
@@ -203,15 +203,22 @@ class DefaultAppContainer(
 
             // Step 2: Create the main LlmInference instance with optimal backend
             initMetrics.startSubPhase("AIInitialization", "CreateLlmInference")
-            // MediaPipe will use the initialized Play Services acceleration automatically
+            
+            // Configure MediaPipe LLM inference with detected optimal backend
+            val preferredBackend = when {
+                accelerationResult.gpuAvailable -> LlmInference.Backend.GPU
+                else -> LlmInference.Backend.CPU
+            }
+            
             val llmInferenceOptions = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(visionModelFile.absolutePath)
                 .setMaxTokens(800) // Reduced for faster JSON-only responses
                 .setMaxNumImages(1)
-                // Note: MediaPipe internally selects the best backend
+                .setPreferredBackend(preferredBackend) // Use GPU when available, fallback to CPU
                 .build()
 
-            Log.i(TAG, "Creating LlmInference with Play Services optimized runtime")
+            Log.i(TAG, "Creating LlmInference with backend: $preferredBackend")
+            Log.i(TAG, "GPU available: ${accelerationResult.gpuAvailable}, using ${if (accelerationResult.gpuAvailable) "GPU" else "CPU"} acceleration")
             visionLlmInference = LlmInference.createFromOptions(context, llmInferenceOptions)
             initMetrics.endSubPhase("AIInitialization", "CreateLlmInference", accelerationResult.selectedBackend)
             Log.i(TAG, "Vision LLM instance created successfully.")
@@ -362,11 +369,17 @@ class DefaultAppContainer(
             val accelerationResult = playServicesAcceleration.findOptimalAcceleration(visionModelFile.absolutePath)
             Log.i(TAG, "Model switch using ${accelerationResult.selectedBackend} (confidence: ${(accelerationResult.confidence * 100).toInt()}%)")
 
-            // MediaPipe will use the re-initialized Play Services acceleration automatically
+            // Configure MediaPipe LLM inference with detected optimal backend for new model
+            val preferredBackend = when {
+                accelerationResult.gpuAvailable -> LlmInference.Backend.GPU
+                else -> LlmInference.Backend.CPU
+            }
+            
             val llmInferenceOptions = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(visionModelFile.absolutePath)
                 .setMaxTokens(800) // Match the token limit used in initialization
                 .setMaxNumImages(1)
+                .setPreferredBackend(preferredBackend) // Use GPU when available
                 .build()
             visionLlmInference = LlmInference.createFromOptions(context, llmInferenceOptions)
 
