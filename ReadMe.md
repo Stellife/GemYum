@@ -8,6 +8,10 @@
 * image size/type
 * reasoning type/style
 
+# APP LAUNCH
+* Protections while app is launching / models are initializing 
+
+
 # Image Analysis
 
 ## Photo
@@ -20,35 +24,6 @@
 
 
 ### Additional items lookup flow:
-"Additional Items (+add item)"
-Step 3: Analysis Trigger
-- User clicks "Analyze" button (with search icon)
-- Button shows loading spinner during search (isSearching = true)
-- Triggers the onSearchNutrition callback with food name and serving size
-
-3. Backend Processing (ManualNutritionEntry.kt:150-172)
-
-val result = onSearchNutrition(newItemName.trim(), serving)
-
-This calls through to:
-- NutritionSearchService.searchNutrition(foodName, servingSize, servingUnit)
-- Local Database First: Searches enhanced nutrition database
-- USDA API Fallback: If not found locally, queries USDA FoodData Central API
-- Smart Matching: Uses fuzzy matching and food name normalization
-
-4. Success Path
-
-- If nutrition data found → Creates AnalyzedFoodItem with full nutrition facts
-- Adds item to manualItems list
-- Calls onItemsChanged(manualItems) to update parent component
-- Form resets and collapses
-- New item appears as expandable card below
-
-5. Error Handling
-
-- If no data found → Shows error: "No nutrition data found for [food]. Try different name or check spelling"
-- User can retry with different spelling/name
-- Form stays open for corrections
 
 
 ## Discuss with Model - discuss with the model on ingredients that may or may not be in the photograph
@@ -71,6 +46,7 @@ This calls through to:
 
 # BUGS:
 * USDA API missed responses
+* Save error feedback in Quick snap -> takes us to old quick snap screen.
 
 
 

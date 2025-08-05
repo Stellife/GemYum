@@ -33,11 +33,18 @@ fun QuickSnapOptionsScreen(
     val context = LocalContext.current
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
     
-    // Gallery launcher
-    val galleryLauncher = rememberLauncherForActivityResult(
+    // Gallery launcher for Pre-frame mode
+    val preFrameGalleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { onSelectFromGallery(it) }
+    }
+    
+    // Gallery launcher for No Edits mode 
+    val noEditsGalleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { onYoloGallery(it) }
     }
 
     // Remove Scaffold - let GemMunchAppScaffold handle navigation
@@ -45,30 +52,15 @@ fun QuickSnapOptionsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(0.dp)
                 .padding(24.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = "Choose your Quick Snap mode",
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(bottom = 24.dp)
-            )
             
-            Text(
-                text = "Standard mode allows cropping and editing before analysis",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(bottom = 32.dp)
-            )
-            
-            // Standard Camera Option
+            // Take Photo Option
             OptionCard(
                 title = "📸 Take Photo",
-                description = "Capture with camera, crop & edit before analysis",
+                description = "Take a photo of the food to analyze",
                 icon = Icons.Outlined.CameraAlt,
                 onClick = {
                     if (cameraPermissionState.status.isGranted) {
@@ -80,70 +72,26 @@ fun QuickSnapOptionsScreen(
                 modifier = Modifier.padding(bottom = 12.dp)
             )
             
-            // Standard Gallery Option
+            // Upload with Pre-frame Option
             OptionCard(
-                title = "📱 Upload Image",
-                description = "Select from gallery, crop & edit before analysis",
+                title = "📱 Upload from Gallery + frame",
+                description = "Prepare Image with Gemma's framing recommendations",
                 icon = Icons.Outlined.PhotoLibrary,
                 onClick = {
-                    galleryLauncher.launch("image/*")
+                    preFrameGalleryLauncher.launch("image/*")
                 },
-                modifier = Modifier.padding(bottom = 20.dp)
-            )
-            
-            // YOLO Mode Section
-            Text(
-                text = "⚡ YOLO Mode - Instant Analysis",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            
-            Text(
-                text = "High-resolution instant analysis - no cropping, just results!",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-            
-            // YOLO Camera Option
-            OptionCard(
-                title = "⚡ YOLO Camera",
-                description = "Instant analysis from camera (3072x4080 capable!)",
-                icon = Icons.Outlined.CameraAlt,
-                onClick = {
-                    if (cameraPermissionState.status.isGranted) {
-                        onYoloCamera()
-                    } else {
-                        cameraPermissionState.launchPermissionRequest()
-                    }
-                },
-                isYolo = true,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
             
-            // YOLO Gallery Option
+            // Upload Raw Option
             OptionCard(
-                title = "⚡ YOLO Gallery",
-                description = "Instant analysis from any resolution image",
+                title = "📱 Upload from Gallery + 🤞",
+                description = "I'm feeling lucky just sending the raw image",
                 icon = Icons.Outlined.PhotoLibrary,
                 onClick = {
-                    galleryLauncher.launch("image/*")
+                    noEditsGalleryLauncher.launch("image/*")
                 },
-                isYolo = true,
-                onYoloGallery = onYoloGallery
-            )
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            Text(
-                text = "Both options will allow you to crop and adjust your image before analysis",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 16.dp)
+                isHighlighted = true
             )
         }
     }
@@ -165,32 +113,15 @@ private fun OptionCard(
     icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    isYolo: Boolean = false,
-    onYoloGallery: ((Uri) -> Unit)? = null
+    isHighlighted: Boolean = false
 ) {
-    // For YOLO Gallery, we need special handling
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let { 
-            if (isYolo && onYoloGallery != null) {
-                onYoloGallery(it)
-            }
-        }
-    }
-    
-    val actualOnClick = if (isYolo && title.contains("Gallery") && onYoloGallery != null) {
-        { galleryLauncher.launch("image/*") }
-    } else {
-        onClick
-    }
     Card(
-        onClick = actualOnClick,
+        onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
             .height(120.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isYolo) {
+            containerColor = if (isHighlighted) {
                 MaterialTheme.colorScheme.primaryContainer
             } else {
                 MaterialTheme.colorScheme.surfaceVariant
@@ -208,7 +139,7 @@ private fun OptionCard(
                 icon,
                 contentDescription = null,
                 modifier = Modifier.size(48.dp),
-                tint = if (isYolo) {
+                tint = if (isHighlighted) {
                     MaterialTheme.colorScheme.onPrimaryContainer
                 } else {
                     MaterialTheme.colorScheme.primary
@@ -225,7 +156,7 @@ private fun OptionCard(
                     title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (isYolo) {
+                    color = if (isHighlighted) {
                         MaterialTheme.colorScheme.onPrimaryContainer
                     } else {
                         MaterialTheme.colorScheme.onSurface
@@ -234,7 +165,7 @@ private fun OptionCard(
                 Text(
                     description,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (isYolo) {
+                    color = if (isHighlighted) {
                         MaterialTheme.colorScheme.onPrimaryContainer
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant

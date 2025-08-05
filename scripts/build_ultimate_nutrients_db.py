@@ -475,20 +475,29 @@ class NutrientsDatabaseBuilder:
         """Load common foods nutritional data"""
         logger.info("Loading common foods data...")
         
-        # Import the common foods data
+        total_items = 0
+        
+        # Import the original common foods data
         try:
             from common_foods_data import COMMON_FOODS_DATA
+            for item in COMMON_FOODS_DATA:
+                self._insert_food(**item)
+                total_items += 1
+            logger.info(f"Loaded {len(COMMON_FOODS_DATA)} items from common_foods_data.py")
         except ImportError:
             logger.error("Could not import common_foods_data.py")
-            return
-        
-        # Insert all common foods
-        total_items = 0
-        for item in COMMON_FOODS_DATA:
-            self._insert_food(**item)
-            total_items += 1
             
-        logger.info(f"Loaded {total_items} common food items")
+        # Import the expanded common foods data
+        try:
+            from expanded_common_foods_data import EXPANDED_COMMON_FOODS
+            for item in EXPANDED_COMMON_FOODS:
+                self._insert_food(**item)
+                total_items += 1
+            logger.info(f"Loaded {len(EXPANDED_COMMON_FOODS)} items from expanded_common_foods_data.py")
+        except ImportError:
+            logger.error("Could not import expanded_common_foods_data.py")
+            
+        logger.info(f"Total common food items loaded: {total_items}")
         self.conn.commit()
 
 
@@ -498,7 +507,7 @@ def main():
     
     with NutrientsDatabaseBuilder() as builder:
         # 1. Load USDA data (most comprehensive)
-        if USDA_API_KEY and USDA_API_KEY != "DEMO_KEY":
+        if USDA_API_KEY:
             logger.info("Using USDA API key to fetch comprehensive food data...")
             builder.fetch_usda_foods()
         else:

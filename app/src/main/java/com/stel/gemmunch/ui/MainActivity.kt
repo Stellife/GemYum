@@ -10,11 +10,15 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -31,6 +35,7 @@ import com.stel.gemmunch.ui.*
 import com.stel.gemmunch.viewmodels.EnhancedChatViewModel
 import com.stel.gemmunch.viewmodels.EnhancedChatViewModelFactory
 import com.stel.gemmunch.utils.SessionManager
+import com.stel.gemmunch.utils.VisionModelPreferencesManager
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import com.stel.gemmunch.ui.screens.NutrientDBScreen
@@ -123,11 +128,49 @@ fun GemMunchApp(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     
+    // State to track current screen title
+    var currentTitle by remember { mutableStateOf<String>("GemMunch") }
+    
+    // Track current chat mode
+    var currentChatMode by remember { mutableStateOf<String?>(null) }
+    
+    // Update title and chat mode based on navigation changes
+    LaunchedEffect(navBackStackEntry) {
+        val route = navBackStackEntry?.destination?.route
+        val withCameraArg = navBackStackEntry?.arguments?.getString("withCamera")
+        
+        // Update chat mode for AppScaffold
+        currentChatMode = if (route == "chat/{withCamera}") withCameraArg else null
+        
+        currentTitle = when {
+            route?.startsWith("camera/") == true -> "Quick Snap Insight"
+            route?.startsWith("imageCrop/") == true -> "Frame food for analysis"
+            route == "chat/{withCamera}" -> {
+                when (withCameraArg) {
+                    "true" -> "Deep Chat: Vision + Text Async chat"
+                    "false" -> "Text Only: Reasoning Model"
+                    else -> "GemMunch"
+                }
+            }
+            else -> "GemMunch"
+        }
+    }
+    
     CompositionLocalProvider(LocalSessionManager provides sessionManager) {
         GemMunchAppScaffold(
             navController = navController,
             mainViewModel = mainViewModel,
-            currentRoute = currentRoute
+            analyzeAndChatViewModel = analyzeAndChatViewModel,
+            textOnlyMealViewModel = textOnlyMealViewModel,
+            currentRoute = currentRoute,
+            currentChatMode = currentChatMode,
+            title = {
+                Text(
+                    text = currentTitle,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         ) { paddingValues ->
             NavHost(
                 navController = navController, 
@@ -359,7 +402,7 @@ fun GemMunchApp(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "⚡ YOLO Mode: Analyzing high-resolution image...",
+                        text = "🤞 Feeling Lucky: Analyzing high-resolution image...",
                         style = MaterialTheme.typography.titleMedium,
                         textAlign = TextAlign.Center
                     )

@@ -39,6 +39,7 @@ fun TextOnlyMealScreen(
     val availableActions by viewModel.availableActions.collectAsStateWithLifecycle()
     val currentMealNutrition by viewModel.currentMealNutrition.collectAsStateWithLifecycle()
     val showHealthConnectDialog by viewModel.showHealthConnectDialog.collectAsStateWithLifecycle()
+    val showResetDialog by viewModel.showResetDialog.collectAsStateWithLifecycle()
     
     var inputText by remember { mutableStateOf("") }
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -62,52 +63,6 @@ fun TextOnlyMealScreen(
                 .fillMaxSize()
                 .imePadding() // This handles keyboard adjustments
         ) {
-            // Header
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            "🍽️ Describe Your Meal",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        Text(
-                            "Fast nutrition tracking with guided assistance",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                        )
-                    }
-                    
-                    // Reset Button
-                    IconButton(
-                        onClick = { 
-                            viewModel.resetConversation()
-                        },
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = "Reset conversation",
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
-            }
 
             // Messages
             LazyColumn(
@@ -287,6 +242,32 @@ fun TextOnlyMealScreen(
             dismissButton = {
                 TextButton(
                     onClick = { viewModel.dismissHealthConnectDialog() }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+    
+    // Reset Confirmation Dialog
+    if (showResetDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissResetDialog() },
+            title = { Text("Reset Conversation") },
+            text = { Text("This will erase and reset the entire conversation. Are you sure?") },
+            confirmButton = {
+                TextButton(
+                    onClick = { 
+                        viewModel.dismissResetDialog()
+                        viewModel.resetConversation()
+                    }
+                ) {
+                    Text("Confirm")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.dismissResetDialog() }
                 ) {
                     Text("Cancel")
                 }

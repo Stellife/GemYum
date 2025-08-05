@@ -31,6 +31,7 @@ fun NutrientDBScreen(
     val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val hasSearched by viewModel.hasSearched.collectAsStateWithLifecycle()
     val keyboardController = LocalSoftwareKeyboardController.current
 
     // Remove Scaffold - let GemMunchAppScaffold handle navigation
@@ -129,8 +130,25 @@ fun NutrientDBScreen(
                 isLoading -> {
                     // Loading state already shown in button
                 }
-                searchResults.isEmpty() && searchQuery.isNotEmpty() -> {
-                    // No results found
+                searchResults.isNotEmpty() -> {
+                    // Results found
+                    Text(
+                        "Search Results (${searchResults.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(searchResults) { foodItem ->
+                            NutrientDBResultCard(foodItem = foodItem)
+                        }
+                    }
+                }
+                hasSearched && searchResults.isEmpty() -> {
+                    // No results found after search
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
@@ -152,23 +170,6 @@ fun NutrientDBScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onErrorContainer
                             )
-                        }
-                    }
-                }
-                searchResults.isNotEmpty() -> {
-                    // Results found
-                    Text(
-                        "Search Results (${searchResults.size})",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(searchResults) { foodItem ->
-                            NutrientDBResultCard(foodItem = foodItem)
                         }
                     }
                 }

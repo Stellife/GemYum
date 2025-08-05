@@ -47,11 +47,18 @@ class EnhancedChatViewModel(
     private val _showHealthConnectDialog = MutableStateFlow(false)
     val showHealthConnectDialog: StateFlow<Boolean> = _showHealthConnectDialog.asStateFlow()
 
+    private val _showResetDialog = MutableStateFlow(false)
+    val showResetDialog: StateFlow<Boolean> = _showResetDialog.asStateFlow()
+
     // Track current image and conversation state
     private var currentImagePath: String? = initialImagePath
     private var currentImageBitmap: Bitmap? = null
     private var awaitingUserResponse = false
     private var conversationContext = mutableListOf<String>()
+    
+    // Track current generation job for cancellation
+    private var currentGenerationJob: kotlinx.coroutines.Job? = null
+    private var isGenerationCancelled = false
 
     init {
         viewModelScope.launch {
@@ -75,7 +82,10 @@ class EnhancedChatViewModel(
     fun sendMessage(text: String) {
         if (text.isBlank()) return
 
-        viewModelScope.launch {
+        // Reset cancellation flag for new generation
+        isGenerationCancelled = false
+        
+        currentGenerationJob = viewModelScope.launch {
             // Add user message
             addMessage(ChatMessage(
                 id = UUID.randomUUID().toString(),
@@ -119,6 +129,8 @@ class EnhancedChatViewModel(
     }
 
     private suspend fun startImageAnalysis() {
+        // Reset cancellation flag for new generation
+        isGenerationCancelled = false
         _isLoading.value = true
         appContainer.updateModelStatus(ModelStatus.RUNNING_INFERENCE)
         
@@ -432,19 +444,36 @@ Use this structured approach:"""
         return kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
             val responseBuilder = StringBuilder()
             var currentMessageId: String? = null
+            var hasResumed = false // Track if continuation has been resumed
             
             continuation.invokeOnCancellation {
-                Log.d(TAG, "Streaming response cancelled")
+                Log.d(TAG, "Streaming response cancelled via coroutine cancellation")
+                if (!hasResumed) {
+                    hasResumed = true
+                    // Note: This will be called if the coroutine is cancelled externally
+                }
             }
             
             try {
                 session.generateResponseAsync { partialResult, done ->
                     Log.d(TAG, "Streaming token: '$partialResult', done: $done")
                     
+                    // Check if we've already resumed or if generation was cancelled
+                    if (hasResumed || isGenerationCancelled) {
+                        Log.d(TAG, "Generation cancelled or already completed - ignoring token")
+                        return@generateResponseAsync
+                    }
+                    
                     responseBuilder.append(partialResult)
                     
                     // Update UI with streaming text
                     viewModelScope.launch {
+                        // Double-check cancellation in coroutine context
+                        if (isGenerationCancelled) {
+                            Log.d(TAG, "Generation cancelled during UI update")
+                            return@launch
+                        }
+                        
                         if (currentMessageId == null) {
                             // Create initial streaming message
                             currentMessageId = UUID.randomUUID().toString()
@@ -463,20 +492,28 @@ Use this structured approach:"""
                         if (done) {
                             // Mark message as complete
                             val finalResponse = responseBuilder.toString()
-                            updateStreamingMessage(currentMessageId!!, finalResponse, false)
                             
-                            // Log the complete response for debugging
-                            Log.d(TAG, "=== COMPLETE AI RESPONSE ===")
-                            Log.d(TAG, finalResponse)
-                            Log.d(TAG, "=== END RESPONSE (${finalResponse.length} chars) ===")
+                            // Only update UI if not cancelled
+                            if (!isGenerationCancelled) {
+                                updateStreamingMessage(currentMessageId!!, finalResponse, false)
+                                
+                                // Log the complete response for debugging
+                                Log.d(TAG, "=== COMPLETE AI RESPONSE ===")
+                                Log.d(TAG, finalResponse)
+                                Log.d(TAG, "=== END RESPONSE (${finalResponse.length} chars) ===")
+                            } else {
+                                Log.d(TAG, "Generation was cancelled - not updating final message")
+                            }
                             
-                            continuation.resume(finalResponse) {}
+                            hasResumed = true
+                            continuation.resume(if (isGenerationCancelled) "" else finalResponse) {}
                         }
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error in streaming response", e)
-                if (continuation.isActive) {
+                if (continuation.isActive && !hasResumed) {
+                    hasResumed = true
                     continuation.resume("") {}
                 }
             }
@@ -728,6 +765,8 @@ Continue the structured analysis:"""
         val totalProtein = knownItems.mapNotNull { it.protein }.sum()
         val totalCarbs = knownItems.mapNotNull { it.totalCarbs }.sum()
         val totalFat = knownItems.mapNotNull { it.totalFat }.sum()
+        val totalGlycemicLoad = knownItems.mapNotNull { it.glycemicLoad }.sum()
+        val hasGlycemicData = knownItems.any { it.glycemicIndex != null }
 
         val nutritionSummary = buildString {
             appendLine("**Nutrition Analysis Complete!**")
@@ -736,7 +775,16 @@ Continue the structured analysis:"""
             if (knownItems.isNotEmpty()) {
                 appendLine("**Known Items (${knownItems.size}):**")
                 knownItems.forEach { item ->
-                    appendLine("• ${item.foodName} - ${item.calories} cal")
+                    append("• ${item.foodName} - ${item.calories} cal")
+                    // Add glycemic index if available
+                    item.glycemicIndex?.let { gi ->
+                        append(" (GI: $gi")
+                        item.glycemicLoad?.let { gl ->
+                            append(", GL: ${String.format("%.1f", gl)}")
+                        }
+                        append(")")
+                    }
+                    appendLine()
                 }
                 appendLine()
                 appendLine("**Total from Known Items:**")
@@ -744,6 +792,16 @@ Continue the structured analysis:"""
                 appendLine("• Protein: ${totalProtein.toInt()}g")
                 appendLine("• Carbs: ${totalCarbs.toInt()}g")
                 appendLine("• Fat: ${totalFat.toInt()}g")
+                
+                // Add glycemic load summary if available
+                if (hasGlycemicData) {
+                    val glCategory = when {
+                        totalGlycemicLoad <= 10 -> "Low"
+                        totalGlycemicLoad <= 19 -> "Medium"
+                        else -> "High"
+                    }
+                    appendLine("• Glycemic Load: ${String.format("%.1f", totalGlycemicLoad)} ($glCategory)")
+                }
                 appendLine()
             }
             
@@ -913,6 +971,14 @@ Continue the structured analysis:"""
         _showHealthConnectDialog.value = false
     }
 
+    fun showResetDialog() {
+        _showResetDialog.value = true
+    }
+
+    fun dismissResetDialog() {
+        _showResetDialog.value = false
+    }
+
     fun addImageToConversation(imagePath: String) {
         currentImagePath = imagePath
         _hasImage.value = true
@@ -955,12 +1021,45 @@ Continue the structured analysis:"""
         }
     }
     
+    fun stopGeneration() {
+        // Set cancellation flag first
+        isGenerationCancelled = true
+        
+        // Cancel any ongoing generation without clearing conversation
+        currentGenerationJob?.cancel()
+        currentGenerationJob = null
+        _isLoading.value = false
+        
+        // Update model status
+        appContainer.updateModelStatus(ModelStatus.READY)
+        
+        // Clean up any streaming messages
+        viewModelScope.launch {
+            val currentMessages = _messages.value
+            val lastMessage = currentMessages.lastOrNull()
+            if (lastMessage != null && lastMessage.isStreaming) {
+                // Mark the last streaming message as complete with current content
+                val updatedMessages = currentMessages.dropLast(1) + lastMessage.copy(isStreaming = false)
+                _messages.value = updatedMessages
+                Log.d(TAG, "Marked streaming message as complete due to cancellation")
+            }
+        }
+        
+        Log.d(TAG, "Generation stopped by user")
+    }
+    
     fun clearChatAndGoHome() {
+        // Cancel any ongoing generation
+        isGenerationCancelled = true
+        currentGenerationJob?.cancel()
+        currentGenerationJob = null
+        
         // Clear all conversation state
         _messages.value = emptyList()
         _isLoading.value = false
         _currentMealNutrition.value = emptyList()
         _showHealthConnectDialog.value = false
+        _showResetDialog.value = false
         _hasImage.value = false
         
         // Clear image state
@@ -968,6 +1067,9 @@ Continue the structured analysis:"""
         currentImageBitmap = null
         awaitingUserResponse = false
         conversationContext.clear()
+        
+        // Reset cancellation flag
+        isGenerationCancelled = false
     }
 
     private fun addMessage(message: ChatMessage) {

@@ -41,6 +41,9 @@ class TextOnlyMealViewModel(
     private val _showHealthConnectDialog = MutableStateFlow(false)
     val showHealthConnectDialog: StateFlow<Boolean> = _showHealthConnectDialog.asStateFlow()
 
+    private val _showResetDialog = MutableStateFlow(false)
+    val showResetDialog: StateFlow<Boolean> = _showResetDialog.asStateFlow()
+
     // Quick action buttons state
     private val _availableActions = MutableStateFlow<List<QuickAction>>(emptyList())
     val availableActions: StateFlow<List<QuickAction>> = _availableActions.asStateFlow()
@@ -115,6 +118,10 @@ class TextOnlyMealViewModel(
                 // User is confirming or correcting ingredients
                 handleIngredientConfirmation(text)
             }
+            ConversationStage.COLLECTING_PORTIONS -> {
+                // User is providing portion information
+                handlePortionCollection(text)
+            }
             ConversationStage.REFINING_PORTIONS -> {
                 // User is adjusting portion sizes
                 handlePortionRefinement(text)
@@ -145,59 +152,136 @@ class TextOnlyMealViewModel(
     }
 
     private fun generateReasoningChain(description: String): String {
-        return """**🔍 Analyzing your meal...**
+        return """**🧠 Smart Reasoning: Understanding Your Meal**
 
-**STEP 1 - Understanding what you described:**
-${description}
+**STEP 1 - Parsing Your Description:**
+"$description"
 
-**STEP 2 - Breaking down the components:**
-Let me identify the main foods and ingredients...
+**STEP 2 - My Reasoning Process:**
+• 🎯 **Explicit Ingredient Detection:** Finding ingredients you specifically mentioned
+• 🍽️ **Dish Type Recognition:** Understanding what type of meal this is  
+• 🧩 **Smart Inference:** Adding only essential missing ingredients (like noodles for pad thai)
+• 📏 **Portion Estimation:** Assigning reasonable serving sizes
 
-**STEP 3 - Ingredient detection reasoning:**
-• Looking for explicitly mentioned foods
-• Identifying cooking methods that suggest additional ingredients
-• Considering typical accompaniments for this type of meal
-• Estimating reasonable portion sizes
+**Key Principle:** I prioritize what YOU said over generic meal assumptions!
 
-**STEP 4 - Initial ingredient list:**"""
+**STEP 3 - Intelligent Analysis Results:**"""
     }
 
     private fun extractIngredientsFromDescription(description: String): List<String> {
-        // Simple keyword-based extraction for now
-        // In a real implementation, this could use NLP or the AI model
-        val commonFoods = mapOf(
-            "chicken" to "Chicken breast, 6 oz",
-            "rice" to "White rice, 1 cup cooked",
-            "broccoli" to "Broccoli, 1 cup",
-            "pasta" to "Pasta, 2 oz dry",
-            "salmon" to "Salmon fillet, 6 oz",
-            "salad" to "Mixed greens, 2 cups",
-            "bread" to "Bread, 2 slices",
-            "eggs" to "Eggs, 2 large",
-            "yogurt" to "Greek yogurt, 1 cup",
-            "banana" to "Banana, 1 medium",
-            "apple" to "Apple, 1 medium",
-            "cheese" to "Cheese, 1 oz",
-            "milk" to "Milk, 1 cup",
-            "butter" to "Butter, 1 tbsp",
-            "oil" to "Olive oil, 1 tbsp"
-        )
-
-        val foundIngredients = mutableListOf<String>()
         val lowerDescription = description.lowercase()
-
-        for ((keyword, ingredient) in commonFoods) {
-            if (lowerDescription.contains(keyword)) {
-                foundIngredients.add(ingredient)
-            }
+        val foundIngredients = mutableListOf<String>()
+        
+        // REASONING STEP 1: Parse explicitly mentioned ingredients first
+        val explicitIngredients = parseExplicitIngredients(description)
+        foundIngredients.addAll(explicitIngredients)
+        
+        // REASONING STEP 2: Only add dish-based ingredients if no explicit ingredients found
+        if (foundIngredients.isEmpty()) {
+            val dishIngredients = extractFromDishName(lowerDescription)
+            foundIngredients.addAll(dishIngredients)
+        } else {
+            // REASONING STEP 3: Add missing base ingredients for known dishes
+            val baseIngredients = addMissingBaseIngredients(lowerDescription, foundIngredients)
+            foundIngredients.addAll(0, baseIngredients) // Add at beginning
         }
-
-        // If nothing found, provide generic response
+        
+        // If still nothing found, provide generic response
         if (foundIngredients.isEmpty()) {
             foundIngredients.add("Mixed meal components, typical serving size")
         }
 
-        return foundIngredients
+        return foundIngredients.distinct() // Remove duplicates
+    }
+    
+    private fun parseExplicitIngredients(description: String): List<String> {
+        val ingredients = mutableListOf<String>()
+        val lowerDescription = description.lowercase()
+        
+        // Enhanced ingredient map with better detection
+        val ingredientMap = mapOf(
+            // Proteins
+            "chicken" to "Chicken, 4 oz",
+            "beef" to "Beef, 4 oz", 
+            "pork" to "Pork, 4 oz",
+            "salmon" to "Salmon, 4 oz",
+            "tuna" to "Tuna, 4 oz",
+            "shrimp" to "Shrimp, 4 oz",
+            "prawns" to "Shrimp, 4 oz",
+            "eggs" to "Eggs, 2 large",
+            "egg" to "Eggs, 2 large",
+            "tofu" to "Tofu, 4 oz",
+            "turkey" to "Turkey, 4 oz",
+            "fish" to "Fish, 4 oz",
+            
+            // Vegetables
+            "broccoli" to "Broccoli, 1 cup",
+            "spinach" to "Spinach, 2 cups",
+            "carrots" to "Carrots, 1 cup", 
+            "onions" to "Onions, 0.5 medium",
+            "onion" to "Onions, 0.5 medium",
+            "tomatoes" to "Tomatoes, 1 medium",
+            "tomato" to "Tomatoes, 1 medium",
+            "peppers" to "Bell peppers, 1 cup",
+            "mushrooms" to "Mushrooms, 1 cup",
+            "bean sprouts" to "Bean sprouts, 1 cup",
+            "sprouts" to "Bean sprouts, 1 cup",
+            
+            // Carbs
+            "rice" to "Rice, 1 cup cooked",
+            "noodles" to "Rice noodles, 4 oz",
+            "pasta" to "Pasta, 2 oz dry",
+            "bread" to "Bread, 2 slices",
+            
+            // Dairy
+            "cheese" to "Cheese, 1 oz",
+            "milk" to "Milk, 1 cup",
+            "butter" to "Butter, 1 tbsp",
+            
+            // Nuts
+            "peanuts" to "Peanuts, 2 tbsp",
+            "cashews" to "Cashews, 2 tbsp"
+        )
+        
+        // Look for explicitly mentioned ingredients
+        for ((keyword, standardIngredient) in ingredientMap) {
+            if (lowerDescription.contains(keyword)) {
+                ingredients.add(standardIngredient)
+            }
+        }
+        
+        return ingredients
+    }
+    
+    private fun extractFromDishName(lowerDescription: String): List<String> {
+        // Only use this when NO explicit ingredients were mentioned
+        return when {
+            lowerDescription.contains("pad thai") -> listOf("Rice noodles, 4 oz", "Mixed vegetables, 1 cup", "Protein (unspecified), 4 oz")
+            lowerDescription.contains("fried rice") -> listOf("Fried rice, 1.5 cups", "Mixed vegetables, 1 cup") 
+            lowerDescription.contains("pizza") -> listOf("Pizza slice, 1 large", "Cheese, 1 oz")
+            lowerDescription.contains("salad") -> listOf("Mixed greens, 2 cups", "Salad dressing, 2 tbsp")
+            lowerDescription.contains("sandwich") -> listOf("Bread, 2 slices", "Sandwich filling, 4 oz")
+            else -> emptyList()
+        }
+    }
+    
+    private fun addMissingBaseIngredients(lowerDescription: String, mentionedIngredients: List<String>): List<String> {
+        val baseIngredients = mutableListOf<String>()
+        
+        // Check if base ingredients are missing for known dishes
+        val hasNoodles = mentionedIngredients.any { it.contains("noodles", ignoreCase = true) }
+        val hasRice = mentionedIngredients.any { it.contains("rice", ignoreCase = true) }
+        
+        when {
+            lowerDescription.contains("pad thai") && !hasNoodles -> {
+                baseIngredients.add("Rice noodles, 4 oz")
+            }
+            lowerDescription.contains("fried rice") && !hasRice -> {
+                baseIngredients.add("Fried rice base, 1.5 cups")
+            }
+        }
+        
+        return baseIngredients
     }
 
     private fun showIngredientConfirmation(ingredients: List<String>) {
@@ -276,6 +360,11 @@ ${pendingIngredients.joinToString("\n") { "• $it" }}
         )
     }
 
+    private suspend fun handlePortionCollection(response: String) {
+        // Handle portion collection - simplified for now
+        completeNutritionAnalysis()
+    }
+
     private suspend fun handlePortionRefinement(response: String) {
         // Handle portion size adjustments
         completeNutritionAnalysis()
@@ -308,7 +397,7 @@ ${pendingIngredients.joinToString("\n") { "• $it" }}
         conversationStage = ConversationStage.INITIAL
         _availableActions.value = listOf(
             QuickAction("new_meal", "🍽️ Track Another Meal", "I want to track another meal"),
-            QuickAction("save", "💾 Save to Health", "Save this meal to my health data")
+            QuickAction("questions", "❓ Ask Questions", "I have questions about this meal")
         )
     }
 
@@ -347,9 +436,32 @@ ${pendingIngredients.joinToString("\n") { "• $it" }}
         val totalProtein = items.sumOf { it.protein ?: 0.0 }
         val totalCarbs = items.sumOf { it.totalCarbs ?: 0.0 }
         val totalFat = items.sumOf { it.totalFat ?: 0.0 }
+        val totalGlycemicLoad = items.sumOf { it.glycemicLoad ?: 0.0 }
+        val hasGlycemicData = items.any { it.glycemicIndex != null }
 
         val itemBreakdown = items.joinToString("\n") { item ->
-            "• ${item.foodName}: ${item.calories} cal"
+            buildString {
+                append("• ${item.foodName}: ${item.calories} cal")
+                item.glycemicIndex?.let { gi ->
+                    append(" (GI: $gi")
+                    item.glycemicLoad?.let { gl ->
+                        append(", GL: ${String.format("%.1f", gl)}")
+                    }
+                    append(")")
+                }
+            }
+        }
+
+        // Build glycemic summary
+        val glycemicSummary = if (hasGlycemicData) {
+            val glCategory = when {
+                totalGlycemicLoad <= 10 -> "Low"
+                totalGlycemicLoad <= 19 -> "Medium"
+                else -> "High"
+            }
+            "\n📈 **Glycemic Load:** ${String.format("%.1f", totalGlycemicLoad)} ($glCategory)"
+        } else {
+            ""
         }
 
         addMessage(ChatMessage(
@@ -359,7 +471,7 @@ ${pendingIngredients.joinToString("\n") { "• $it" }}
 🔥 **Total Calories:** $totalCalories cal
 🥩 **Protein:** ${String.format("%.1f", totalProtein)}g
 🍞 **Carbs:** ${String.format("%.1f", totalCarbs)}g
-🥑 **Fat:** ${String.format("%.1f", totalFat)}g
+🥑 **Fat:** ${String.format("%.1f", totalFat)}g$glycemicSummary
 
 **📋 Breakdown by food:**
 $itemBreakdown
@@ -393,6 +505,14 @@ $itemBreakdown
         _showHealthConnectDialog.value = false
     }
 
+    fun showResetDialog() {
+        _showResetDialog.value = true
+    }
+
+    fun dismissResetDialog() {
+        _showResetDialog.value = false
+    }
+
     fun resetConversation() {
         // Clear all messages
         _messages.value = emptyList()
@@ -407,6 +527,7 @@ $itemBreakdown
         
         // Reset dialogs
         _showHealthConnectDialog.value = false
+        _showResetDialog.value = false
         _isLoading.value = false
         
         // Show initial greeting again
@@ -418,6 +539,7 @@ $itemBreakdown
 enum class ConversationStage {
     INITIAL,
     CONFIRMING_INGREDIENTS,
+    COLLECTING_PORTIONS,
     REFINING_PORTIONS,
     FINAL_ANALYSIS
 }

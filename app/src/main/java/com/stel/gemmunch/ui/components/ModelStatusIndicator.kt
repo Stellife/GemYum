@@ -1,22 +1,51 @@
 package com.stel.gemmunch.ui.components
 
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.stel.gemmunch.ModelStatus
+import com.stel.gemmunch.utils.VisionModelPreferencesManager
 
 @Composable
 fun ModelStatusIndicator(
     modelStatus: ModelStatus,
     onClick: () -> Unit
 ) {
+    // Animated loading effects for loading states
+    val infiniteTransition = rememberInfiniteTransition(label = "loading")
+    
+    // Rotation animation for loading icons
+    val rotationAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rotation"
+    )
+    
+    // Pulsing alpha animation for loading text
+    val pulsingAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulsing"
+    )
+    
     val statusText = when (modelStatus) {
         ModelStatus.INITIALIZING -> "Initializing"
         ModelStatus.PREPARING_SESSION -> "Preparing Session"
@@ -41,30 +70,73 @@ fun ModelStatusIndicator(
         ModelStatus.CLEANUP -> Icons.Default.CleaningServices
     }
     
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+    // Determine if this status should be animated
+    val shouldAnimate = modelStatus in setOf(
+        ModelStatus.INITIALIZING, 
+        ModelStatus.PREPARING_SESSION,
+        ModelStatus.RUNNING_INFERENCE
+    )
+    
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .clickable { onClick() }
             .padding(horizontal = 8.dp)
     ) {
+        // Active Model information
+        val selectedVisionModel = VisionModelPreferencesManager.getSelectedVisionModel()
+        val modelDisplayName = VisionModelPreferencesManager.getVisionModelDisplayName(selectedVisionModel)
+        
         Text(
-            text = "AI Status:",
-            style = MaterialTheme.typography.labelMedium,
+            text = "Active Model: $modelDisplayName",
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Medium
         )
-        Spacer(modifier = Modifier.width(8.dp))
-        Icon(
-            imageVector = icon,
-            contentDescription = statusText,
-            tint = statusColor,
-            modifier = Modifier.size(20.dp)
-        )
-        Spacer(modifier = Modifier.width(4.dp))
-        Text(
-            text = statusText,
-            style = MaterialTheme.typography.labelMedium,
-            color = statusColor
-        )
+        
+        Spacer(modifier = Modifier.height(4.dp))
+        
+        // AI Status row
+        Row(
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "AI Status:",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            
+            // Animated icon for loading states
+            Icon(
+                imageVector = icon,
+                contentDescription = statusText,
+                tint = statusColor,
+                modifier = Modifier
+                    .size(20.dp)
+                    .then(
+                        if (shouldAnimate) {
+                            Modifier.rotate(rotationAngle)
+                        } else {
+                            Modifier
+                        }
+                    )
+            )
+            
+            Spacer(modifier = Modifier.width(4.dp))
+            
+            // Animated text for loading states
+            Text(
+                text = statusText,
+                style = MaterialTheme.typography.labelMedium,
+                color = statusColor,
+                modifier = if (shouldAnimate) {
+                    Modifier.graphicsLayer { alpha = pulsingAlpha }
+                } else {
+                    Modifier
+                }
+            )
+        }
     }
 }

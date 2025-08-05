@@ -4,8 +4,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
@@ -22,7 +25,10 @@ import com.stel.gemmunch.ui.dialogs.SettingsDialog
 fun GemMunchAppScaffold(
     navController: NavController,
     mainViewModel: MainViewModel,
+    analyzeAndChatViewModel: com.stel.gemmunch.viewmodels.EnhancedChatViewModel,
+    textOnlyMealViewModel: com.stel.gemmunch.viewmodels.TextOnlyMealViewModel,
     currentRoute: String?,
+    currentChatMode: String? = null,
     showBackButton: Boolean = true,
     title: @Composable () -> Unit = { 
         Text(
@@ -38,6 +44,12 @@ fun GemMunchAppScaffold(
     val initMetrics = mainViewModel.initMetrics
     val initMetricsUpdates = mainViewModel.initMetricsUpdates
     
+    // Chat inference states for both ViewModels
+    val deepChatIsLoading by analyzeAndChatViewModel.isLoading.collectAsStateWithLifecycle()
+    val textOnlyIsLoading by textOnlyMealViewModel.isLoading.collectAsStateWithLifecycle()
+    val deepChatHasImage by analyzeAndChatViewModel.hasImage.collectAsStateWithLifecycle()
+    val textOnlyMessages by textOnlyMealViewModel.messages.collectAsStateWithLifecycle()
+    
     var showAiDetailsDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     
@@ -45,10 +57,16 @@ fun GemMunchAppScaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
-                    ModelStatusIndicator(
-                        modelStatus = modelStatus,
-                        onClick = { showAiDetailsDialog = true }
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        // Show custom title
+                        title()
+                        
+                        // Show model status below title
+                        ModelStatusIndicator(
+                            modelStatus = modelStatus,
+                            onClick = { showAiDetailsDialog = true }
+                        )
+                    }
                 },
                 navigationIcon = {
                     if (showBackButton && currentRoute != "home" && navController.previousBackStackEntry != null) {
@@ -58,19 +76,73 @@ fun GemMunchAppScaffold(
                                 contentDescription = "Back"
                             )
                         }
-                    } else {
-                        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                            title()
-                        }
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showSettingsDialog = true }) {
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = "Settings",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    when (currentChatMode) {
+                        "true" -> {
+                            // Deep Chat mode (vision + text)
+                            if (deepChatIsLoading) {
+                                // Show stop button when inference is running
+                                IconButton(onClick = { 
+                                    analyzeAndChatViewModel.stopGeneration()
+                                }) {
+                                    Icon(
+                                        Icons.Filled.Cancel,
+                                        contentDescription = "Stop Generation",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            } else if (deepChatHasImage) {
+                                // Show reset button when not loading and has image
+                                IconButton(onClick = { 
+                                    analyzeAndChatViewModel.showResetDialog()
+                                }) {
+                                    Icon(
+                                        Icons.Filled.Refresh,
+                                        contentDescription = "Reset Conversation",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                        "false" -> {
+                            // Text Only mode
+                            if (textOnlyIsLoading) {
+                                // Show stop button when inference is running (though Text Only may not need this)
+                                IconButton(onClick = { 
+                                    // Text Only doesn't have stop generation, so we'll just show disabled button
+                                }) {
+                                    Icon(
+                                        Icons.Filled.Cancel,
+                                        contentDescription = "Stop Generation",
+                                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                                    )
+                                }
+                            } else if (textOnlyMessages.isNotEmpty()) {
+                                // Show reset button when there are messages
+                                IconButton(onClick = { 
+                                    textOnlyMealViewModel.showResetDialog()
+                                }) {
+                                    Icon(
+                                        Icons.Filled.Refresh,
+                                        contentDescription = "Reset Conversation",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Only show settings icon on home screen
+                    if (currentRoute == "home") {
+                        IconButton(onClick = { showSettingsDialog = true }) {
+                            Icon(
+                                Icons.Filled.Settings,
+                                contentDescription = "Settings",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             )

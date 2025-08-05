@@ -109,6 +109,9 @@ fun CameraFoodCaptureScreen(
     // AI Details Dialog state
     var showTransitionDialog by remember { mutableStateOf(false) }
     
+    // New feedback section state
+    var selectedFeedbackIssues by remember { mutableStateOf<Set<String>>(emptySet()) }
+    
     // Settings Dialog state
     
     // Use ViewModel to track photo metadata (persists across navigation)
@@ -201,11 +204,9 @@ fun CameraFoodCaptureScreen(
         }
     )
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { padding ->
+    Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -445,45 +446,10 @@ fun CameraFoodCaptureScreen(
                     }
                 }
                 is FoodCaptureState.Success -> {
-                    // YOLO Mode indicator - show if high resolution was processed
-                    val isYoloMode = state.analyzedBitmap?.let { bitmap ->
-                        bitmap.width > 768 || bitmap.height > 768
-                    } ?: false
-                    
-                    if (isYoloMode) {
+                    // Performance metrics card at the top
+                    state.originalAnalysis.performanceMetrics?.let { metrics ->
                         item {
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "⚡",
-                                        style = MaterialTheme.typography.headlineMedium,
-                                        modifier = Modifier.padding(end = 12.dp)
-                                    )
-                                    Column {
-                                        Text(
-                                            text = "YOLO Mode Complete!",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                        Text(
-                                            text = "Analyzed ${state.analyzedBitmap?.width}x${state.analyzedBitmap?.height} image in ~19s",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                    }
-                                }
-                            }
+                            PerformanceMetricsCard(metrics)
                         }
                     }
                     
@@ -547,12 +513,6 @@ fun CameraFoodCaptureScreen(
                             }
                         }
                         
-                        // Still show performance metrics if available
-                        state.originalAnalysis.performanceMetrics?.let { metrics ->
-                            item {
-                                PerformanceMetricsCard(metrics)
-                            }
-                        }
                         
                         // Allow user to provide feedback about the error
                         item {
@@ -615,45 +575,32 @@ fun CameraFoodCaptureScreen(
                             }) { Text("Try Again") }
                         }
                     } else {
-                        // Performance metrics card
-                        state.originalAnalysis.performanceMetrics?.let { metrics ->
-                            item {
-                                PerformanceMetricsCard(metrics)
-                            }
-                        }
                         
-                        // Model name and header
+                        // Total calories display at top
                         item {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(state.originalAnalysis.modelName, style = MaterialTheme.typography.headlineSmall)
-                                Text("Identified Items:", style = MaterialTheme.typography.bodyMedium)
+                                Spacer(Modifier.height(16.dp))
+                                val aiCalories = state.editableItems.sumOf { it.calories }
+                                val manualCalories = itemFeedbacks.values
+                                    .flatMap { it.manualItems }
+                                    .sumOf { it.calories }
+                                val totalCalories = aiCalories + manualCalories
+                                Text("Estimated Total Calories: $totalCalories", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.height(16.dp))
                             }
                         }
                         
-                        // Food items with inline feedback
+                        // Food items without feedback cards
                         itemsIndexed(state.editableItems, key = { _, item -> item.hashCode() }) { index, item ->
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                EditableFoodItem(
-                                    item = item,
-                                    onItemChanged = { updatedItem -> foodViewModel.updateItem(index, updatedItem) },
-                                    onItemDeleted = { 
-                                        foodViewModel.deleteItem(index)
-                                        // Also remove the feedback for this item
-                                        itemFeedbacks = itemFeedbacks - index
-                                    }
-                                )
-                                
-                                // Inline feedback card for this item
-                                InlineFeedbackCard(
-                                    item = item,
-                                    itemIndex = index,
-                                    feedback = itemFeedbacks[index] ?: ItemFeedback(itemIndex = index),
-                                    nutritionSearchService = mainViewModel.appContainer.nutritionSearchService,
-                                    onFeedbackUpdate = { updatedFeedback ->
-                                        itemFeedbacks = itemFeedbacks + (index to updatedFeedback)
-                                    }
-                                )
-                            }
+                            EditableFoodItem(
+                                item = item,
+                                onItemChanged = { updatedItem -> foodViewModel.updateItem(index, updatedItem) },
+                                onItemDeleted = { 
+                                    foodViewModel.deleteItem(index)
+                                    // Also remove the feedback for this item
+                                    itemFeedbacks = itemFeedbacks - index
+                                }
+                            )
                         }
                         
                         // Meal timing card (appears once, before save buttons)
@@ -666,165 +613,52 @@ fun CameraFoodCaptureScreen(
                             )
                         }
                         
-                        // Health Connect Section (single, consolidated)
-                        if (mainUiState.healthConnectPermissionsGranted) {
-                            item {
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
-                                    )
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(16.dp),
-                                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                                    ) {
-                                        // Header with toggle
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                "Health Connect",
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Switch(
-                                                checked = writeToHealthConnect,
-                                                onCheckedChange = { checked ->
-                                                    writeToHealthConnect = checked
-                                                    if (checked && healthConnectItemSelections.isEmpty()) {
-                                                        // Initialize selections when first enabled
-                                                        val selections = mutableListOf<HealthConnectItemSelection>()
-                                                        
-                                                        // Add AI items
-                                                        state.editableItems.forEachIndexed { index, item ->
-                                                            selections.add(
-                                                                HealthConnectItemSelection(
-                                                                    itemId = "ai_$index",
-                                                                    itemType = "ai",
-                                                                    itemIndex = index,
-                                                                    foodName = item.foodName,
-                                                                    calories = item.calories,
-                                                                    isSelected = true
-                                                                )
-                                                            )
-                                                        }
-                                                        
-                                                        // Add manual items
-                                                        itemFeedbacks.forEach { (feedbackIndex, feedback) ->
-                                                            feedback.manualItems.forEachIndexed { manualIndex, manualItem ->
-                                                                selections.add(
-                                                                    HealthConnectItemSelection(
-                                                                        itemId = "manual_${feedbackIndex}_$manualIndex",
-                                                                        itemType = "manual",
-                                                                        itemIndex = manualIndex,
-                                                                        foodName = manualItem.foodName,
-                                                                        calories = manualItem.calories,
-                                                                        isSelected = true
-                                                                    )
-                                                                )
-                                                            }
-                                                        }
-                                                        
-                                                        healthConnectItemSelections = selections
-                                                    }
-                                                }
-                                            )
-                                        }
-                                        
-                                        if (writeToHealthConnect && healthConnectItemSelections.isNotEmpty()) {
-                                            Text(
-                                                "Items to include:",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                            
-                                            // Item selection checkboxes
-                                            healthConnectItemSelections.forEach { selection ->
-                                                Row(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .padding(vertical = 4.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Checkbox(
-                                                        checked = selection.isSelected,
-                                                        onCheckedChange = { checked ->
-                                                            healthConnectItemSelections = healthConnectItemSelections.map {
-                                                                if (it.itemId == selection.itemId) {
-                                                                    it.copy(isSelected = checked)
-                                                                } else it
-                                                            }
-                                                        }
-                                                    )
-                                                    Text(
-                                                        "${selection.foodName} (${selection.calories} cal) - ${if (selection.itemType == "ai") "AI detected" else "User added"}",
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        modifier = Modifier.padding(start = 8.dp)
-                                                    )
-                                                }
-                                            }
-                                            
-                                            // Total calories for selected items
-                                            val selectedCalories = healthConnectItemSelections
-                                                .filter { it.isSelected }
-                                                .sumOf { it.calories }
-                                            
-                                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                                            
-                                            Text(
-                                                "Total to write: $selectedCalories calories",
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                fontWeight = FontWeight.Medium,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
                         
-                        // Total calories and buttons
+                        // Save to Health Connect and Cancel buttons  
                         item {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Spacer(Modifier.height(16.dp))
-                                val aiCalories = state.editableItems.sumOf { it.calories }
-                                val manualCalories = itemFeedbacks.values
-                                    .flatMap { it.manualItems }
-                                    .sumOf { it.calories }
-                                val totalCalories = aiCalories + manualCalories
-                                Text("Estimated Total: $totalCalories Calories", style = MaterialTheme.typography.titleLarge)
-                                Spacer(Modifier.height(16.dp))
                                 
-                                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    OutlinedButton(onClick = { 
-                                        foodViewModel.reset()
-                                        navController.navigate("home") {
-                                            popUpTo("home") { inclusive = true }
-                                        }
-                                    }) { Text("Cancel") }
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { 
+                                            foodViewModel.reset()
+                                            navController.navigate("home") {
+                                                popUpTo("home") { inclusive = true }
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    ) { 
+                                        Text("Cancel") 
+                                    }
                                     Button(
                                         onClick = { 
                                             coroutineScope.launch {
-                                                // Save feedback for all items
-                                                val feedbackService = mainViewModel.appContainer.feedbackStorageService
-                                                
-                                                state.editableItems.forEachIndexed { index, item ->
-                                                    val feedback = itemFeedbacks[index]
-                                                    if (feedback != null) {
-                                                        // Debug logging
-                                                        Log.d(TAG, "Building feedback document with photoUniqueId: $photoUniqueId")
-                                                        
-                                                        // Calculate meal time first
-                                                        val mealDateTime = when (mealTiming.option) {
+                                                try {
+                                                    val totalCalories = state.editableItems.sumOf { it.calories }
+                                                    
+                                                    // Check Health Connect permissions first
+                                                    if (!mainUiState.healthConnectPermissionsGranted) {
+                                                        Toast.makeText(
+                                                            context, 
+                                                            "Health Connect permissions required. Please grant permissions first.",
+                                                            Toast.LENGTH_LONG
+                                                        ).show()
+                                                        onRequestHealthConnectPermissions()
+                                                        return@launch
+                                                    }
+                                                    
+                                                    // Save to Health Connect
+                                                    val success = mainViewModel.appContainer.healthConnectManager.writeNutritionRecords(
+                                                        items = state.editableItems,
+                                                        mealDateTime = when (mealTiming.option) {
                                                             MealTimingOption.USE_PHOTO_TIME -> {
                                                                 when {
                                                                     !isFromGallery -> Instant.now()
-                                                                    photoTimestamp != null -> photoTimestamp
+                                                                    photoTimestamp != null -> photoTimestamp!!
                                                                     else -> Instant.now()
                                                                 }
                                                             }
@@ -832,132 +666,149 @@ fun CameraFoodCaptureScreen(
                                                                 mealTiming.customDateTime?.atZone(ZoneId.systemDefault())?.toInstant() ?: Instant.now()
                                                             }
                                                         }
-                                                        
-                                                        // Convert to full feedback document
-                                                        val feedbackDoc = buildFeedbackDocument(
-                                                            mealAnalysis = state.originalAnalysis,
-                                                            item = item,
-                                                            itemFeedback = feedback,
-                                                            totalItems = state.editableItems.size,
-                                                            mealTiming = mealTiming,
-                                                            isFromGallery = isFromGallery,
-                                                            photoUniqueId = photoUniqueId,
-                                                            photoTimestamp = photoTimestamp,
-                                                            analyzedBitmap = state.analyzedBitmap,
-                                                            writeToHealthConnect = writeToHealthConnect,
-                                                            wasWrittenToHealthConnect = false // Will be updated after HC write
-                                                        )
-                                                        val documentId = feedbackService.storeFeedback(feedbackDoc)
-                                                        if (documentId != null) {
-                                                            Log.i("FeedbackScreen", "Stored feedback for ${item.foodName}: score=${feedback.overallScore}")
-                                                            
-                                                            // Note: Health Connect write is now handled after all items are saved
-                                                        }
+                                                    )
+                                                    
+                                                    if (success) {
+                                                        Toast.makeText(
+                                                            context, 
+                                                            "✓ Meal with $totalCalories calories saved to Health Connect!",
+                                                            Toast.LENGTH_LONG
+                                                        ).show()
+                                                    } else {
+                                                        Toast.makeText(
+                                                            context, 
+                                                            "⚠️ Failed to save to Health Connect. Check permissions.",
+                                                            Toast.LENGTH_LONG
+                                                        ).show()
                                                     }
+                                                    
+                                                    // Save feedback document with Health Connect status
+                                                    val feedbackService = mainViewModel.appContainer.feedbackStorageService
+                                                    val feedback = buildFeedbackDocument(
+                                                        mealAnalysis = state.originalAnalysis,
+                                                        item = state.editableItems.first(), // Use first item as representative
+                                                        itemFeedback = itemFeedbacks[0] ?: ItemFeedback(itemIndex = 0), // Default feedback
+                                                        totalItems = state.editableItems.size,
+                                                        mealTiming = mealTiming,
+                                                        isFromGallery = isFromGallery,
+                                                        photoUniqueId = photoUniqueId,
+                                                        photoTimestamp = photoTimestamp,
+                                                        analyzedBitmap = state.analyzedBitmap,
+                                                        writeToHealthConnect = true,
+                                                        wasWrittenToHealthConnect = success
+                                                    )
+                                                    feedbackService.storeFeedback(feedback)
+                                                    
+                                                } catch (e: Exception) {
+                                                    Log.e(TAG, "Error saving to Health Connect", e)
+                                                    Toast.makeText(
+                                                        context, 
+                                                        "Error saving to Health Connect: ${e.message}",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
                                                 }
                                                 
-                                                // Write to Health Connect if enabled (consolidated single entry)
-                                                if (writeToHealthConnect && healthConnectItemSelections.any { it.isSelected }) {
-                                                    val healthConnect = mainViewModel.appContainer.healthConnectManager
-                                                    if (healthConnect.isHealthConnectAvailable() && mainUiState.healthConnectPermissionsGranted) {
-                                                        val selectedItems = mutableListOf<AnalyzedFoodItem>()
-                                                        
-                                                        // Collect selected AI items with user corrections applied
-                                                        healthConnectItemSelections
-                                                            .filter { it.isSelected && it.itemType == "ai" }
-                                                            .forEach { selection ->
-                                                                val item = state.editableItems[selection.itemIndex]
-                                                                val feedback = itemFeedbacks[selection.itemIndex]
-                                                                
-                                                                // Apply user corrections if provided
-                                                                val correctedItem = if (feedback != null && 
-                                                                    feedback.providingCorrections && 
-                                                                    feedback.correctedValues.isNotEmpty()) {
-                                                                    item.copy(
-                                                                        calories = feedback.correctedValues["Calories"]?.toIntOrNull() ?: item.calories,
-                                                                        protein = feedback.correctedValues["Protein"]?.toDoubleOrNull() ?: item.protein,
-                                                                        totalFat = feedback.correctedValues["Total Fat"]?.toDoubleOrNull() ?: item.totalFat,
-                                                                        totalCarbs = feedback.correctedValues["Carbohydrates"]?.toDoubleOrNull() ?: item.totalCarbs,
-                                                                        sodium = feedback.correctedValues["Sodium"]?.toDoubleOrNull() ?: item.sodium
-                                                                    )
-                                                                } else {
-                                                                    item
-                                                                }
-                                                                selectedItems.add(correctedItem)
-                                                            }
-                                                        
-                                                        // Collect selected manual items
-                                                        itemFeedbacks.forEach { (feedbackIndex, feedback) ->
-                                                            feedback.manualItems.forEachIndexed { manualIndex, manualItem ->
-                                                                val itemId = "manual_${feedbackIndex}_$manualIndex"
-                                                                if (healthConnectItemSelections.any { it.itemId == itemId && it.isSelected }) {
-                                                                    selectedItems.add(manualItem)
-                                                                }
-                                                            }
-                                                        }
-                                                        
-                                                        // Combine all selected items into a single entry
-                                                        if (selectedItems.isNotEmpty()) {
-                                                            val itemsToWrite = if (selectedItems.size > 1) {
-                                                                val nutritionSearchService = mainViewModel.appContainer.nutritionSearchService
-                                                                listOf(nutritionSearchService.combineNutritionData(selectedItems))
-                                                            } else {
-                                                                selectedItems
-                                                            }
-                                                            
-                                                            val mealDateTime = when (mealTiming.option) {
-                                                                MealTimingOption.USE_PHOTO_TIME -> {
-                                                                    when {
-                                                                        !isFromGallery -> Instant.now()
-                                                                        photoTimestamp != null -> photoTimestamp
-                                                                        else -> Instant.now()
-                                                                    }
-                                                                }
-                                                                MealTimingOption.CUSTOM_TIME -> {
-                                                                    mealTiming.customDateTime?.atZone(ZoneId.systemDefault())?.toInstant() ?: Instant.now()
-                                                                }
-                                                            }
-                                                            
-                                                            val success = healthConnect.writeNutritionRecords(
-                                                                items = itemsToWrite,
-                                                                mealDateTime = mealDateTime ?: Instant.now()
-                                                            )
-                                                            
-                                                            if (success) {
-                                                                Log.i("FeedbackScreen", "Successfully wrote combined meal to Health Connect")
-                                                            } else {
-                                                                Log.e("FeedbackScreen", "Failed to write to Health Connect")
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                
-                                                // Calculate total calories including manual items
-                                                val aiCalories = state.editableItems.sumOf { it.calories }
-                                                val manualCalories = itemFeedbacks.values
-                                                    .flatMap { it.manualItems }
-                                                    .sumOf { it.calories }
-                                                val totalCalories = aiCalories + manualCalories
-                                                
-                                                // Show confirmation with total calories
-                                                Toast.makeText(
-                                                    context, 
-                                                    "Meal with $totalCalories Calories saved!",
-                                                    Toast.LENGTH_LONG
-                                                ).show()
-                                                
-                                                // Reset the view model and navigate to home
                                                 foodViewModel.reset()
                                                 navController.navigate("home") {
                                                     popUpTo("home") { inclusive = true }
                                                 }
                                             }
                                         }, 
-                                        enabled = state.editableItems.isNotEmpty()
+                                        enabled = state.editableItems.isNotEmpty(),
+                                        modifier = Modifier.weight(1f)
                                     ) { 
-                                        Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Spacer(Modifier.width(8.dp))
-                                        Text("Save to Records") 
+                                        Text("Save to Health Connect") 
+                                    }
+                                }
+                                Spacer(Modifier.height(24.dp))
+                            }
+                        }
+                        
+                        // Feedback Section
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp)
+                                ) {
+                                    Text(
+                                        text = "Feedback",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(bottom = 12.dp)
+                                    )
+                                    
+                                    Text(
+                                        text = "Select any issues with the analysis:",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.padding(bottom = 8.dp)
+                                    )
+                                    
+                                    val feedbackOptions = listOf(
+                                        "Incorrect food identified",
+                                        "Missing ingredients", 
+                                        "Wrong quantity",
+                                        "Nutritional Information Feels wrong"
+                                    )
+                                    
+                                    feedbackOptions.forEach { option ->
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(vertical = 4.dp)
+                                        ) {
+                                            Checkbox(
+                                                checked = selectedFeedbackIssues.contains(option),
+                                                onCheckedChange = { checked ->
+                                                    selectedFeedbackIssues = if (checked) {
+                                                        selectedFeedbackIssues + option
+                                                    } else {
+                                                        selectedFeedbackIssues - option
+                                                    }
+                                                }
+                                            )
+                                            Text(
+                                                text = option,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                modifier = Modifier.padding(start = 8.dp)
+                                            )
+                                        }
+                                    }
+                                    
+                                    Spacer(Modifier.height(16.dp))
+                                    
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                // For now, just navigate home - will implement later
+                                                navController.navigate("home") {
+                                                    popUpTo("home") { inclusive = true }
+                                                }
+                                            },
+                                            enabled = selectedFeedbackIssues.isNotEmpty(),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("Text Troubleshoot")
+                                        }
+                                        
+                                        Button(
+                                            onClick = {
+                                                // For now, just navigate home - will implement later  
+                                                navController.navigate("home") {
+                                                    popUpTo("home") { inclusive = true }
+                                                }
+                                            },
+                                            enabled = selectedFeedbackIssues.isNotEmpty(),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("Deep Analysis")
+                                        }
                                     }
                                 }
                             }
@@ -979,6 +830,12 @@ fun CameraFoodCaptureScreen(
                 }
             }
         }
+        
+        // Add SnackbarHost at the bottom of the Box
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
     }
     
     // Transition Dialog for empty results

@@ -32,8 +32,8 @@ object VisionModelPreferencesManager {
         // This list defines the models the user can choose from in the UI.
         // Only .task models are compatible with MediaPipe LlmInference for vision
         return listOf(
-            "GEMMA_3N_E4B_MODEL" to "Gemma 3n E4B (Accurate)",
-            "GEMMA_3N_E2B_MODEL" to "Gemma 3n E2B (Fast)"
+            "GEMMA_3N_E4B_MODEL" to "Gemma 3n E4B",
+            "GEMMA_3N_E2B_MODEL" to "Gemma 3n E2B"
         )
     }
 }

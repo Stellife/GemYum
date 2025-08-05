@@ -239,6 +239,11 @@ class PhotoMealExtractor(
                     val totalInferenceTime = System.currentTimeMillis() - inferenceStartTime
                     Log.i(TAG, "✅ AI inference completed in ${totalInferenceTime / 1000.0}s")
                     
+                    // Log Gemma's raw response for debugging
+                    Log.i(TAG, "=== GEMMA RAW RESPONSE ===")
+                    Log.i(TAG, llmResponse)
+                    Log.i(TAG, "=== END GEMMA RESPONSE ===")
+                    
                     // Log performance insights
                     when {
                         totalInferenceTime < 10000 -> Log.i(TAG, "🚀 Excellent performance - likely using NPU or high-end GPU")
@@ -377,7 +382,8 @@ class PhotoMealExtractor(
                             onProgress?.invoke(progress)
                         }
                     )
-                    AnalyzedFoodItem(
+                    
+                    val analyzedItem = AnalyzedFoodItem(
                         foodName = item.food,
                         quantity = item.quantity,
                         unit = item.unit,
@@ -393,6 +399,16 @@ class PhotoMealExtractor(
                         glycemicIndex = nutrients.glycemicIndex,
                         glycemicLoad = nutrients.glycemicLoad
                     )
+                    
+                    // Log final values assigned to AnalyzedFoodItem
+                    Log.i(TAG, "=== ANALYZED FOOD ITEM CREATED ===")
+                    Log.i(TAG, "Food: '${analyzedItem.foodName}' (${analyzedItem.quantity} ${analyzedItem.unit})")
+                    Log.i(TAG, "Calories: ${analyzedItem.calories}")
+                    Log.i(TAG, "Glycemic Index: ${analyzedItem.glycemicIndex ?: "NULL"}")
+                    Log.i(TAG, "Glycemic Load: ${analyzedItem.glycemicLoad ?: "NULL"}")
+                    Log.i(TAG, "===================================")
+                    
+                    analyzedItem
                 }
             }
             

@@ -48,6 +48,7 @@ fun EnhancedChatScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    val showResetDialog by viewModel.showResetDialog.collectAsStateWithLifecycle()
     
     // Gallery launcher for uploading images
     val galleryLauncher = rememberLauncherForActivityResult(
@@ -63,34 +64,11 @@ fun EnhancedChatScreen(
         }
     }
     
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Analyze & Discuss") },
-                actions = {
-                    // Clear/Reset button
-                    IconButton(
-                        onClick = {
-                            viewModel.clearChatAndGoHome()
-                            navController.navigate("home") {
-                                popUpTo("home") { inclusive = true }
-                            }
-                        }
-                    ) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = "Clear & Go Home",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-            )
-        }
-    ) { paddingValues ->
+    // Remove Scaffold with TopAppBar - let GemMunchAppScaffold handle the title
+    Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
                 .imePadding()
         ) {
         LazyColumn(
@@ -119,18 +97,20 @@ fun EnhancedChatScreen(
             }
         }
         
-            ChatInputBar(
-                onSendMessage = { message ->
-                    viewModel.sendMessage(message)
-                    coroutineScope.launch {
-                        listState.animateScrollToItem(0)
-                    }
-                },
-                onCameraClick = if (withCamera && !hasImage) {
-                    { navController.navigate("camera/chat") }
-                } else null,
-                isLoading = isLoading
-            )
+            // Only show input bar when image is loaded
+            if (hasImage) {
+                ChatInputBar(
+                    onSendMessage = { message ->
+                        viewModel.sendMessage(message)
+                        coroutineScope.launch {
+                            listState.animateScrollToItem(0)
+                        }
+                    },
+                    onCameraClick = null, // No camera button when image loaded
+                    hasImage = hasImage,
+                    isLoading = isLoading
+                )
+            }
         }
     }
     
@@ -155,6 +135,35 @@ fun EnhancedChatScreen(
                     onClick = { viewModel.dismissHealthConnectDialog() }
                 ) {
                     Text("Skip")
+                }
+            }
+        )
+    }
+    
+    // Reset Confirmation Dialog
+    if (showResetDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissResetDialog() },
+            title = { Text("Reset Conversation") },
+            text = { Text("This will erase and reset the entire conversation. Are you sure?") },
+            confirmButton = {
+                TextButton(
+                    onClick = { 
+                        viewModel.dismissResetDialog()
+                        viewModel.clearChatAndGoHome()
+                        navController.navigate("home") {
+                            popUpTo("home") { inclusive = true }
+                        }
+                    }
+                ) {
+                    Text("Confirm")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.dismissResetDialog() }
+                ) {
+                    Text("Cancel")
                 }
             }
         )
@@ -282,11 +291,6 @@ fun InitialWelcomeMessages(
             Spacer(modifier = Modifier.height(8.dp))
         }
         
-        // Text input option
-        ActionMessageBubble(
-            text = "💬 Describing your meal to me",
-            onClick = onStartTextChat
-        )
     }
 }
 
@@ -327,6 +331,7 @@ fun ActionMessageBubble(
 fun ChatInputBar(
     onSendMessage: (String) -> Unit,
     onCameraClick: (() -> Unit)?,
+    hasImage: Boolean,
     isLoading: Boolean
 ) {
     var text by remember { mutableStateOf("") }
@@ -350,7 +355,7 @@ fun ChatInputBar(
                     .padding(8.dp),
                 verticalAlignment = Alignment.Bottom
             ) {
-                // Camera button (if enabled)
+                // Camera button (if enabled) or Reset button (if image loaded)
                 onCameraClick?.let {
                     FilledTonalIconButton(
                         onClick = it,
@@ -362,13 +367,16 @@ fun ChatInputBar(
                     Spacer(modifier = Modifier.width(8.dp))
                 }
                 
+                
                 // Text input
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Describe your meal...") },
-                    enabled = !isLoading,
+                    placeholder = { 
+                        Text(if (hasImage) "Ask about your meal..." else "Upload an image to start deep chat") 
+                    },
+                    enabled = !isLoading && hasImage,
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Sentences,
                         imeAction = ImeAction.Send
@@ -397,7 +405,7 @@ fun ChatInputBar(
                             keyboardController?.hide()
                         }
                     },
-                    enabled = !isLoading && text.isNotBlank(),
+                    enabled = !isLoading && text.isNotBlank() && hasImage,
                     modifier = Modifier.padding(bottom = 4.dp)
                 ) {
                     Icon(Icons.AutoMirrored.Filled.Send, "Send")

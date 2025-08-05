@@ -32,6 +32,9 @@ class NutrientDBViewModel(
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+    
+    private val _hasSearched = MutableStateFlow(false)
+    val hasSearched: StateFlow<Boolean> = _hasSearched.asStateFlow()
 
     fun updateSearchQuery(query: String) {
         _searchQuery.value = query
@@ -40,6 +43,7 @@ class NutrientDBViewModel(
     fun clearSearch() {
         _searchQuery.value = ""
         _searchResults.value = emptyList()
+        _hasSearched.value = false
     }
 
     fun searchFood() {
@@ -64,6 +68,7 @@ class NutrientDBViewModel(
                 _searchResults.value = emptyList()
             } finally {
                 _isLoading.value = false
+                _hasSearched.value = true // Mark that a search was performed
             }
         }
     }

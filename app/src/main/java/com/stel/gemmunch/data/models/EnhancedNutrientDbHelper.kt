@@ -112,6 +112,10 @@ class EnhancedNutrientDbHelper(
                 glycemicLoad = localNutrients.glycemicLoad?.times(scaleFactor)
             )
             Log.i(TAG, "LOCAL HIT: '$food' -> ${scaledNutrients.calories} Calories (base: ${localNutrients.calories} Calories/${databaseServingSize}g, requested: ${grams}g)")
+            Log.i(TAG, "=== GLYCEMIC VALUES FROM DB ===")
+            Log.i(TAG, "Food: '$food' | GI: ${localNutrients.glycemicIndex} | GL: ${localNutrients.glycemicLoad}")
+            Log.i(TAG, "Scaled GL: ${scaledNutrients.glycemicLoad}")
+            Log.i(TAG, "================================")
             return@withContext scaledNutrients
         }
 
@@ -194,6 +198,12 @@ class EnhancedNutrientDbHelper(
     }
     
     private fun extractNutrientInfo(cursor: android.database.Cursor): Pair<NutrientInfo, Double?> {
+        val giValue = cursor.getIntOrNull(9)
+        val glValue = cursor.getDoubleOrNull(10)
+        
+        // Log raw database values for debugging
+        Log.d(TAG, "DB Cursor Values - GI column(9): $giValue, GL column(10): $glValue")
+        
         val nutrientInfo = NutrientInfo(
             calories = cursor.getDouble(0).toInt(),
             protein = cursor.getDoubleOrNull(1),
@@ -204,8 +214,8 @@ class EnhancedNutrientDbHelper(
             totalCarbs = cursor.getDoubleOrNull(6),
             dietaryFiber = cursor.getDoubleOrNull(7),
             sugars = cursor.getDoubleOrNull(8),
-            glycemicIndex = cursor.getIntOrNull(9),
-            glycemicLoad = cursor.getDoubleOrNull(10)
+            glycemicIndex = giValue,
+            glycemicLoad = glValue
         )
         val servingSizeGrams = cursor.getDoubleOrNull(11)
         return Pair(nutrientInfo, servingSizeGrams)

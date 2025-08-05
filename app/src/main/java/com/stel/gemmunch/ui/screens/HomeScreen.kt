@@ -46,16 +46,16 @@ fun HomeScreen(navController: NavController) {
     ) {
             // Header
             Text(
-                "Choose Your Analysis Mode",
+                "Gemma 3n Food Analysis Types",
                 style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.padding(vertical = 8.dp)
             )
             
             // Mode Cards
             ModeCard(
-                title = "Quick Snap",
-                description = "Instant nutrition facts from a photo",
-                estimatedTime = "~5 seconds",
+                title = "Quick Snap: Image Analysis",
+                description = "Vision-led Inference, no chat interface",
+                estimatedTime = "<60 seconds analysis",
                 icon = Icons.Outlined.CameraAlt,
                 backgroundColor = MaterialTheme.colorScheme.primaryContainer,
                 onClick = {
@@ -67,9 +67,9 @@ fun HomeScreen(navController: NavController) {
             )
             
             ModeCard(
-                title = "Analyze & Discuss",
-                description = "Chat about your meal with photo analysis",
-                estimatedTime = "Conversational",
+                title = "Deep Chat: Multimodal + Token Async",
+                description = "Image analysis -> nutrition record",
+                estimatedTime = "Deep analysis",
                 icon = Icons.Outlined.QuestionAnswer,
                 backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
                 onClick = {
@@ -81,9 +81,9 @@ fun HomeScreen(navController: NavController) {
             )
             
             ModeCard(
-                title = "Describe Your Meal",
-                description = "Text-based nutrition tracking",
-                estimatedTime = "Conversational",
+                title = "Text-Only Chat: Reasoning Model",
+                description = "No vision inference, Function Calling",
+                estimatedTime = "More structured reasoning",
                 icon = Icons.Outlined.TextFields,
                 backgroundColor = MaterialTheme.colorScheme.tertiaryContainer,
                 onClick = {
@@ -99,9 +99,9 @@ fun HomeScreen(navController: NavController) {
             
             // Nutrient Database Lookup
             ModeCard(
-                title = "Nutrient DB",
-                description = "Search and explore nutrition database",
-                estimatedTime = "Instant lookup",
+                title = "Nutrient DB Debug",
+                description = "Explore local + API nutrient DB",
+                estimatedTime = "Debug tool",
                 icon = Icons.Outlined.Search,
                 backgroundColor = MaterialTheme.colorScheme.surfaceVariant,
                 onClick = {

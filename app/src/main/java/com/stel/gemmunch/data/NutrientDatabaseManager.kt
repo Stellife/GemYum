@@ -67,10 +67,11 @@ class NutrientDatabaseManager(private val context: Context) {
         val dbFile = File(context.filesDir, DB_NAME)
         
         // Step 1: Check if we need to initialize or update
+        val expectedVersion = "1.1" // Update this when database changes
         if (!forceUpdate && dbFile.exists() && dbFile.length() > 0) {
             val currentVersion = prefs.getString(DB_VERSION_KEY, null)
-            if (currentVersion != null) {
-                Log.i(TAG, "Database exists with version: $currentVersion")
+            if (currentVersion == expectedVersion) {
+                Log.i(TAG, "Database exists with current version: $currentVersion")
                 
                 // TODO: Enable update checks when CDN is configured
                 // Optional: Check for updates
@@ -79,6 +80,10 @@ class NutrientDatabaseManager(private val context: Context) {
                 // }
                 
                 return@withContext dbFile
+            } else {
+                Log.i(TAG, "Database version mismatch. Current: $currentVersion, Expected: $expectedVersion")
+                Log.i(TAG, "Deleting old database to force update...")
+                dbFile.delete()
             }
         }
         
@@ -110,10 +115,10 @@ class NutrientDatabaseManager(private val context: Context) {
                 }
                 Log.i(TAG, "Successfully copied nutrients.db from assets")
                 
-                // Store version info
+                // Store version info - increment version to force update
                 prefs.edit()
-                    .putString(DB_VERSION_KEY, "1.0")
-                    .putString(DB_HASH_KEY, "asset_version")
+                    .putString(DB_VERSION_KEY, "1.1") // Changed from 1.0 to 1.1
+                    .putString(DB_HASH_KEY, "asset_version_1.1")
                     .apply()
                 
                 return true
