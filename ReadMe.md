@@ -55,6 +55,7 @@ This calls through to:
 * Implement Chain of Thought Reasoning with this model
 * Investigate ASYNC more
 * separate items into specific messages, with reply to specific items
+* Implement Stop button when ASYNC STREAMING IS HAPPENING
 
 ## Text only - No Image Inference - Quick text interface and streaming
 * make sure this is not ASYNC

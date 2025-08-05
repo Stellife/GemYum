@@ -9,6 +9,7 @@ import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.QuestionAnswer
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.HealthAndSafety
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -19,6 +20,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import android.content.ComponentName
+import android.os.Build
+import android.provider.Settings
+import android.util.Log
+import android.widget.Toast
+import androidx.health.connect.client.HealthConnectClient
 import com.stel.gemmunch.ui.LocalSessionManager
 import kotlinx.coroutines.launch
 
@@ -27,6 +36,7 @@ import kotlinx.coroutines.launch
 fun HomeScreen(navController: NavController) {
     val sessionManager = LocalSessionManager.current
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+    val context = LocalContext.current
     
     Column(
         modifier = Modifier
@@ -123,6 +133,94 @@ fun HomeScreen(navController: NavController) {
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Health Connect Button
+            Button(
+                onClick = {
+                    try {
+                        // Method 1: Try to launch Health Connect app directly via package manager
+                        val healthConnectIntent = context.packageManager.getLaunchIntentForPackage("com.google.android.apps.healthdata")
+                        if (healthConnectIntent != null) {
+                            Log.d("HomeScreen", "Opening Health Connect app directly")
+                            context.startActivity(healthConnectIntent)
+                            return@Button
+                        }
+                        
+                        // Method 2: Try Health Connect specific intents
+                        val intent = try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                                // Android 14+ (API 34+) - Use ACTION_MANAGE_HEALTH_PERMISSIONS
+                                Intent("androidx.health.ACTION_MANAGE_HEALTH_PERMISSIONS").apply {
+                                    putExtra(Intent.EXTRA_PACKAGE_NAME, context.packageName)
+                                }
+                            } else {
+                                // Android 13 and below - Use ACTION_HEALTH_CONNECT_SETTINGS
+                                Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)
+                            }
+                        } catch (e: Exception) {
+                            Log.w("HomeScreen", "Health Connect intents not available", e)
+                            null
+                        }
+                        
+                        if (intent != null) {
+                            Log.d("HomeScreen", "Trying Health Connect settings intent")
+                            context.startActivity(intent)
+                            return@Button
+                        }
+                        
+                        // Method 3: Try alternative component name approach
+                        val componentIntent = Intent().apply {
+                            component = ComponentName(
+                                "com.google.android.apps.healthdata", 
+                                "com.google.android.apps.healthdata.home.HomeActivity"
+                            )
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        
+                        Log.d("HomeScreen", "Trying Health Connect component intent")
+                        context.startActivity(componentIntent)
+                        
+                    } catch (e: Exception) {
+                        Log.w("HomeScreen", "All Health Connect methods failed, opening Play Store", e)
+                        // Fallback: Open Health Connect in Play Store
+                        try {
+                            val playStoreIntent = Intent(Intent.ACTION_VIEW).apply {
+                                data = android.net.Uri.parse("market://details?id=com.google.android.apps.healthdata")
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            context.startActivity(playStoreIntent)
+                        } catch (e2: Exception) {
+                            // Final fallback: Show toast message
+                            Toast.makeText(
+                                context, 
+                                "Health Connect not available. Please install from Play Store.", 
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondary,
+                    contentColor = MaterialTheme.colorScheme.onSecondary
+                )
+            ) {
+                Icon(
+                    Icons.Outlined.HealthAndSafety,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "Open Health Connect",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium
+                )
             }
         }
     }

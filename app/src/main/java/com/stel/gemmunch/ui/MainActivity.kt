@@ -59,8 +59,9 @@ class MainActivity : ComponentActivity() {
             EnhancedChatViewModelFactory(appContainer, isMultimodal = true)
         }
         
-        val textOnlyViewModel: EnhancedChatViewModel by viewModels {
-            EnhancedChatViewModelFactory(appContainer, isMultimodal = false)
+        // Fast text-only meal tracking ViewModel
+        val textOnlyMealViewModel: com.stel.gemmunch.viewmodels.TextOnlyMealViewModel by viewModels {
+            com.stel.gemmunch.viewmodels.TextOnlyMealViewModelFactory(appContainer)
         }
         
         val nutrientDBViewModel: NutrientDBViewModel by viewModels {
@@ -83,33 +84,22 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
 
-                    // The main app router. Show setup screen only if models aren't downloaded yet
-                    val modelsDownloaded = uiState.downloadState is MultiDownloadState.AllComplete
-                    
-                    if (modelsDownloaded) {
-                        // Models are downloaded, show main app (AI might still be initializing)
-                        GemMunchApp(
-                            mainViewModel = mainViewModel,
-                            foodCaptureViewModel = foodCaptureViewModel,
-                            analyzeAndChatViewModel = analyzeAndChatViewModel,
-                            textOnlyViewModel = textOnlyViewModel,
-                            nutrientDBViewModel = nutrientDBViewModel,
-                            isAiReady = uiState.isAiReady,
-                            initializationProgress = uiState.initializationProgress,
-                            onRequestHealthConnectPermissions = {
-                                healthConnectPermissionLauncher.launch(
-                                    HealthConnectManager.NUTRITION_PERMISSIONS
-                                )
-                            }
-                        )
-                    } else {
-                        // Models not downloaded yet, show setup screen
-                        SetupScreen(
-                            downloadState = uiState.downloadState,
-                            onDownloadClick = { mainViewModel.startModelDownload() },
-                            onBypassSetup = { mainViewModel.bypassSetup() }
-                        )
-                    }
+                    // Always show main app - NutrientDB works without AI models
+                    GemMunchApp(
+                        mainViewModel = mainViewModel,
+                        foodCaptureViewModel = foodCaptureViewModel,
+                        analyzeAndChatViewModel = analyzeAndChatViewModel,
+                        textOnlyMealViewModel = textOnlyMealViewModel,
+                        nutrientDBViewModel = nutrientDBViewModel,
+                        isAiReady = uiState.isAiReady,
+                        initializationProgress = uiState.initializationProgress,
+                        downloadState = uiState.downloadState,
+                        onRequestHealthConnectPermissions = {
+                            healthConnectPermissionLauncher.launch(
+                                HealthConnectManager.NUTRITION_PERMISSIONS
+                            )
+                        }
+                    )
                 }
             }
         }
@@ -121,10 +111,11 @@ fun GemMunchApp(
     mainViewModel: MainViewModel,
     foodCaptureViewModel: FoodCaptureViewModel,
     analyzeAndChatViewModel: EnhancedChatViewModel,
-    textOnlyViewModel: EnhancedChatViewModel,
+    textOnlyMealViewModel: com.stel.gemmunch.viewmodels.TextOnlyMealViewModel,
     nutrientDBViewModel: NutrientDBViewModel,
     isAiReady: Boolean,
     initializationProgress: String?,
+    downloadState: MultiDownloadState,
     onRequestHealthConnectPermissions: () -> Unit
 ) {
     val navController = rememberNavController()
@@ -147,8 +138,17 @@ fun GemMunchApp(
             com.stel.gemmunch.ui.screens.HomeScreen(navController = navController)
         }
         composable("camera/{mode}") { backStackEntry ->
-            val mode = backStackEntry.arguments?.getString("mode") ?: "singleshot"
-            when (mode) {
+            // AI-dependent route - check if models are downloaded
+            val modelsDownloaded = downloadState is MultiDownloadState.AllComplete
+            if (!modelsDownloaded) {
+                SetupScreen(
+                    downloadState = downloadState,
+                    onDownloadClick = { mainViewModel.startModelDownload() },
+                    onBypassSetup = { mainViewModel.bypassSetup() }
+                )
+            } else {
+                val mode = backStackEntry.arguments?.getString("mode") ?: "singleshot"
+                when (mode) {
                 "singleshot" -> {
                     // Set app mode for single shot
                     LaunchedEffect(Unit) {
@@ -205,91 +205,144 @@ fun GemMunchApp(
                     )
                 }
             }
+            }
         }
         composable("chat/{withCamera}") { backStackEntry ->
             val withCamera = backStackEntry.arguments?.getString("withCamera")?.toBoolean() ?: false
             
-            val chatViewModel = if (withCamera) {
-                // For analyze & chat mode, set image context if available
-                foodCaptureViewModel.capturedImageForChat?.let { imagePath ->
-                    analyzeAndChatViewModel.addImageToConversation(imagePath)
+            if (withCamera) {
+                // AI-dependent route for multimodal chat - check if models are downloaded
+                val modelsDownloaded = downloadState is MultiDownloadState.AllComplete
+                if (!modelsDownloaded) {
+                    SetupScreen(
+                        downloadState = downloadState,
+                        onDownloadClick = { mainViewModel.startModelDownload() },
+                        onBypassSetup = { mainViewModel.bypassSetup() }
+                    )
+                } else {
+                    // For analyze & chat mode, set image context if available
+                    foodCaptureViewModel.capturedImageForChat?.let { imagePath ->
+                        analyzeAndChatViewModel.addImageToConversation(imagePath)
+                    }
+                    
+                    com.stel.gemmunch.ui.screens.EnhancedChatScreen(
+                        navController = navController,
+                        withCamera = withCamera,
+                        viewModel = analyzeAndChatViewModel
+                    )
                 }
-                analyzeAndChatViewModel
             } else {
-                textOnlyViewModel
+                // Text-only mode - no AI dependency, use fast function-calling style
+                com.stel.gemmunch.ui.screens.TextOnlyMealScreen(
+                    navController = navController,
+                    viewModel = textOnlyMealViewModel
+                )
             }
-            
-            com.stel.gemmunch.ui.screens.EnhancedChatScreen(
-                navController = navController,
-                withCamera = withCamera,
-                viewModel = chatViewModel
-            )
         }
         composable("analysis") {
-            CameraFoodCaptureScreen(
-                foodViewModel = foodCaptureViewModel,
-                mainViewModel = mainViewModel,
-                navController = navController,
-                isAiReady = isAiReady,
-                initializationProgress = initializationProgress,
-                onRequestHealthConnectPermissions = onRequestHealthConnectPermissions
-            )
+            // AI-dependent route - check if models are downloaded
+            val modelsDownloaded = downloadState is MultiDownloadState.AllComplete
+            if (!modelsDownloaded) {
+                SetupScreen(
+                    downloadState = downloadState,
+                    onDownloadClick = { mainViewModel.startModelDownload() },
+                    onBypassSetup = { mainViewModel.bypassSetup() }
+                )
+            } else {
+                CameraFoodCaptureScreen(
+                    foodViewModel = foodCaptureViewModel,
+                    mainViewModel = mainViewModel,
+                    navController = navController,
+                    isAiReady = isAiReady,
+                    initializationProgress = initializationProgress,
+                    onRequestHealthConnectPermissions = onRequestHealthConnectPermissions
+                )
+            }
         }
         composable("cameraPreview") {
-            CameraPreviewScreen(
-                onImageCaptured = { bitmap ->
-                    foodCaptureViewModel.analyzeMealPhoto(bitmap)
-                    navController.navigate("analysis") {
-                        popUpTo("home") { inclusive = false }
-                    }
-                },
-                onNavigateBack = { navController.popBackStack() }
-            )
+            // AI-dependent route - check if models are downloaded
+            val modelsDownloaded = downloadState is MultiDownloadState.AllComplete
+            if (!modelsDownloaded) {
+                SetupScreen(
+                    downloadState = downloadState,
+                    onDownloadClick = { mainViewModel.startModelDownload() },
+                    onBypassSetup = { mainViewModel.bypassSetup() }
+                )
+            } else {
+                CameraPreviewScreen(
+                    onImageCaptured = { bitmap ->
+                        foodCaptureViewModel.analyzeMealPhoto(bitmap)
+                        navController.navigate("analysis") {
+                            popUpTo("home") { inclusive = false }
+                        }
+                    },
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
         }
         composable("imageCrop/{imageUri}") { backStackEntry ->
-            val encodedUri = backStackEntry.arguments?.getString("imageUri") ?: ""
-            val imageUri = Uri.parse(Uri.decode(encodedUri))
-            ImageCropScreen(
-                imageUri = imageUri,
-                onCropComplete = { bitmap ->
-                    foodCaptureViewModel.analyzeMealPhoto(bitmap)
-                    // Navigate to analysis screen after cropping
-                    navController.navigate("analysis") {
-                        // Clear back stack to prevent going back to crop screen
-                        popUpTo("home") { inclusive = false }
-                    }
-                },
-                onNavigateBack = { navController.popBackStack() }
-            )
+            // AI-dependent route - check if models are downloaded
+            val modelsDownloaded = downloadState is MultiDownloadState.AllComplete
+            if (!modelsDownloaded) {
+                SetupScreen(
+                    downloadState = downloadState,
+                    onDownloadClick = { mainViewModel.startModelDownload() },
+                    onBypassSetup = { mainViewModel.bypassSetup() }
+                )
+            } else {
+                val encodedUri = backStackEntry.arguments?.getString("imageUri") ?: ""
+                val imageUri = Uri.parse(Uri.decode(encodedUri))
+                ImageCropScreen(
+                    imageUri = imageUri,
+                    onCropComplete = { bitmap ->
+                        foodCaptureViewModel.analyzeMealPhoto(bitmap)
+                        // Navigate to analysis screen after cropping
+                        navController.navigate("analysis") {
+                            // Clear back stack to prevent going back to crop screen
+                            popUpTo("home") { inclusive = false }
+                        }
+                    },
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
         }
         
         // YOLO Mode - Direct analysis without cropping  
         composable("yoloAnalysis/{imageUri}") { backStackEntry ->
-            val encodedUri = backStackEntry.arguments?.getString("imageUri") ?: ""
-            val imageUri = Uri.parse(Uri.decode(encodedUri))
-            
-            // Load and analyze image directly without cropping
-            LaunchedEffect(imageUri) {
-                try {
-                    val inputStream = navController.context.contentResolver.openInputStream(imageUri)
-                    val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
-                    inputStream?.close()
-                    
-                    if (bitmap != null) {
-                        // Set YOLO mode for instant high-res analysis
-                        foodCaptureViewModel.setAppMode(com.stel.gemmunch.model.AppMode.SNAP_AND_LOG)
-                        foodCaptureViewModel.analyzeMealPhoto(bitmap)
+            // AI-dependent route - check if models are downloaded
+            val modelsDownloaded = downloadState is MultiDownloadState.AllComplete
+            if (!modelsDownloaded) {
+                SetupScreen(
+                    downloadState = downloadState,
+                    onDownloadClick = { mainViewModel.startModelDownload() },
+                    onBypassSetup = { mainViewModel.bypassSetup() }
+                )
+            } else {
+                val encodedUri = backStackEntry.arguments?.getString("imageUri") ?: ""
+                val imageUri = Uri.parse(Uri.decode(encodedUri))
+                
+                // Load and analyze image directly without cropping
+                LaunchedEffect(imageUri) {
+                    try {
+                        val inputStream = navController.context.contentResolver.openInputStream(imageUri)
+                        val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                        inputStream?.close()
                         
-                        // Navigate directly to analysis
-                        navController.navigate("analysis") {
-                            popUpTo("home") { inclusive = false }
+                        if (bitmap != null) {
+                            // Set YOLO mode for instant high-res analysis
+                            foodCaptureViewModel.setAppMode(com.stel.gemmunch.model.AppMode.SNAP_AND_LOG)
+                            foodCaptureViewModel.analyzeMealPhoto(bitmap)
+                            
+                            // Navigate directly to analysis
+                            navController.navigate("analysis") {
+                                popUpTo("home") { inclusive = false }
+                            }
                         }
+                    } catch (e: Exception) {
+                        // Handle error - could show error screen or go back
+                        navController.popBackStack()
                     }
-                } catch (e: Exception) {
-                    // Handle error - could show error screen or go back
-                    navController.popBackStack()
                 }
-            }
             
             // Show loading screen while processing
             Box(
@@ -318,6 +371,7 @@ fun GemMunchApp(
                         textAlign = TextAlign.Center
                     )
                 }
+            }
             }
         }
         composable("nutrient-db") {
