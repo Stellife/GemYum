@@ -33,6 +33,9 @@ import com.stel.gemmunch.viewmodels.EnhancedChatViewModelFactory
 import com.stel.gemmunch.utils.SessionManager
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import com.stel.gemmunch.ui.screens.NutrientDBScreen
+import com.stel.gemmunch.viewmodels.NutrientDBViewModel
+import com.stel.gemmunch.viewmodels.NutrientDBViewModelFactory
 
 class MainActivity : ComponentActivity() {
     
@@ -58,6 +61,10 @@ class MainActivity : ComponentActivity() {
         
         val textOnlyViewModel: EnhancedChatViewModel by viewModels {
             EnhancedChatViewModelFactory(appContainer, isMultimodal = false)
+        }
+        
+        val nutrientDBViewModel: NutrientDBViewModel by viewModels {
+            NutrientDBViewModelFactory(appContainer)
         }
         
         // Initialize Health Connect permission launcher
@@ -86,6 +93,7 @@ class MainActivity : ComponentActivity() {
                             foodCaptureViewModel = foodCaptureViewModel,
                             analyzeAndChatViewModel = analyzeAndChatViewModel,
                             textOnlyViewModel = textOnlyViewModel,
+                            nutrientDBViewModel = nutrientDBViewModel,
                             isAiReady = uiState.isAiReady,
                             initializationProgress = uiState.initializationProgress,
                             onRequestHealthConnectPermissions = {
@@ -114,6 +122,7 @@ fun GemMunchApp(
     foodCaptureViewModel: FoodCaptureViewModel,
     analyzeAndChatViewModel: EnhancedChatViewModel,
     textOnlyViewModel: EnhancedChatViewModel,
+    nutrientDBViewModel: NutrientDBViewModel,
     isAiReady: Boolean,
     initializationProgress: String?,
     onRequestHealthConnectPermissions: () -> Unit
@@ -310,6 +319,12 @@ fun GemMunchApp(
                     )
                 }
             }
+        }
+        composable("nutrient-db") {
+            NutrientDBScreen(
+                navController = navController,
+                viewModel = nutrientDBViewModel
+            )
         }
             }
         }

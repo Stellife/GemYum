@@ -91,8 +91,19 @@ class EnhancedChatViewModel(
                     // Continue with clarification
                     processClarification(text)
                 } else {
-                    // Start new analysis
-                    startNewAnalysis(text)
+                    // Check if this is a dish correction for multimodal analysis
+                    val correctionKeywords = listOf("no", "wrong", "not", "actually", "it's", "this is")
+                    val isDishCorrection = isMultimodal && correctionKeywords.any { keyword -> 
+                        text.lowercase().contains(keyword) 
+                    }
+                    
+                    if (isDishCorrection && currentImageBitmap != null) {
+                        // User is correcting the dish identification - re-analyze
+                        reAnalyzeWithCorrection(text)
+                    } else {
+                        // Start new analysis
+                        startNewAnalysis(text)
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing message", e)
@@ -144,6 +155,44 @@ class EnhancedChatViewModel(
         val response = callAI(prompt, includeImage = isMultimodal)
         processAnalysisResult(response)
     }
+    
+    private suspend fun reAnalyzeWithCorrection(correctedDishName: String) {
+        // Clear previous nutrition data
+        _currentMealNutrition.value = emptyList()
+        
+        // Re-run the image analysis with the correct dish information
+        val prompt = """Thank you for the correction! You told me this is: "$correctedDishName"
+
+Now let me re-analyze the image with this correct information.
+
+STEP 1 - RE-ANALYSIS WITH CORRECT DISH:
+Looking at the meal photo again, knowing this is $correctedDishName, let me identify the ingredients properly.
+
+STEP 2 - DETAILED INGREDIENT ANALYSIS:
+For $correctedDishName, reason through:
+- What ingredients are clearly visible in the photo
+- What ingredients are typically part of $correctedDishName but might not be clearly visible
+- Appropriate portion size estimates for each component
+
+STEP 3 - STRUCTURED RESPONSE:
+**My corrected analysis of your meal:**
+This is $correctedDishName as you specified.
+
+**Ingredients I can identify:**
+- [List ingredients you can actually see in the photo with portions]
+
+**Ingredients that might be present but I can't see clearly:**
+- [List typical ingredients for $correctedDishName that might be present with estimated portions]
+
+**Questions:**
+1. Are any identified foods incorrect or wrong portion size?
+2. Are any typical ingredients present but not visible in the photo?
+
+Provide the detailed ingredient analysis for $correctedDishName:"""
+
+        val response = callAI(prompt, includeImage = isMultimodal)
+        processAnalysisResult(response)
+    }
 
     private suspend fun analyzeImageWithVision(): String {
         return withContext(Dispatchers.IO) {
@@ -156,60 +205,31 @@ class EnhancedChatViewModel(
                 session.addImage(mpImage)
             }
 
-            val prompt = """You are a nutrition expert analyzing a meal photo. Use structured reasoning to identify foods and ingredients.
+            val prompt = """You are a nutrition expert analyzing a meal photo. First identify the main dish, then ask for confirmation before detailed analysis.
 
-STEP 1 - INITIAL FOOD IDENTIFICATION:
-Look at the meal photo and identify the main dish(es) you can see.
+STEP 1 - INITIAL DISH IDENTIFICATION:
+Look at the meal photo and identify what you think the main dish is.
 
-STEP 2 - INGREDIENT REASONING:
-For each food item, reason through:
-- What ingredients are clearly visible
-- What ingredients are likely present but not clearly visible
-- Typical ingredients for this type of dish
-- Portion size estimates
+STEP 2 - VERIFICATION REQUEST:
+Present your identification and ask the user to confirm before proceeding to detailed ingredient analysis.
 
-STEP 3 - STRUCTURED RESPONSE FORMAT:
-Present your analysis as:
+RESPONSE FORMAT:
+**My initial assessment:**
+I'm looking at your meal photo, and this appears to be [your best guess of the main dish/food].
 
-**My analysis of your meal:**
-[State your best guess of what the main dish/food is]
-
-**Ingredients I can identify:**
-- [Ingredient 1]: [portion estimate]
-- [Ingredient 2]: [portion estimate]
-- [etc.]
-
-**Ingredients that might be present but I can't see clearly:**
-- [Potential ingredient 1]: [estimated portion]
-- [Potential ingredient 2]: [estimated portion]
-- [etc.]
-
-**Questions for you:**
-- Did I miss any ingredients you can see?
-- Are any of my ingredient guesses wrong?
-- Can you help me with more accurate portion sizes?
+**Before I analyze the ingredients in detail, is this correct?**
+- If yes, I'll proceed with detailed ingredient analysis
+- If no, please tell me what dish this actually is so I can analyze it properly
 
 EXAMPLE RESPONSE:
-**My analysis of your meal:**
-This looks like a serving of Pad Thai with rice noodles.
+**My initial assessment:**
+I'm looking at your meal photo, and this appears to be a Pad Thai dish with noodles.
 
-**Ingredients I can identify:**
-- Rice noodles: 1.5 cups cooked
-- Lime wedges: 2 pieces
-- Bean sprouts: 1/4 cup
+**Before I analyze the ingredients in detail, is this correct?**
+- If yes, I'll proceed with detailed ingredient analysis  
+- If no, please tell me what dish this actually is so I can analyze it properly
 
-**Ingredients that might be present but I can't see clearly:**
-- Shrimp or chicken: 3-4 oz
-- Peanuts: 1-2 tablespoons crushed
-- Fish sauce/seasonings: 1-2 teaspoons
-- Vegetable oil: 1 tablespoon
-
-**Questions for you:**
-- Did I miss any ingredients you can see?
-- Are any of my ingredient guesses wrong?
-- Can you help me with more accurate portion sizes?
-
-Now analyze this meal photo using this structured approach:"""
+Now provide your initial dish identification:"""
             
             session.addQueryChunk(prompt)
             
@@ -219,7 +239,75 @@ Now analyze this meal photo using this structured approach:"""
     }
 
     private fun buildImageAnalysisPrompt(userInput: String): String {
-        return """You are continuing a nutrition analysis conversation. The user provided feedback: "$userInput"
+        // Check if user is correcting the initial dish identification
+        val correctionKeywords = listOf("no", "wrong", "not", "actually", "it's", "this is")
+        val isCorrection = correctionKeywords.any { keyword -> 
+            userInput.lowercase().contains(keyword) 
+        }
+        
+        return if (isCorrection) {
+            // User is correcting the dish identification - re-analyze with their input
+            """Thank you for the correction! You told me: "$userInput"
+
+Now let me re-analyze the image with this correct information.
+
+STEP 1 - RE-ANALYSIS WITH CORRECT DISH:
+Looking at the meal photo again, knowing this is actually $userInput, let me identify the ingredients properly.
+
+STEP 2 - DETAILED INGREDIENT ANALYSIS:
+Based on this being $userInput, here's my analysis:
+
+**My corrected analysis of your meal:**
+This is $userInput as you specified.
+
+**Ingredients I can identify:**
+- [Ingredient 1]: [portion estimate]
+- [Ingredient 2]: [portion estimate]
+- [etc.]
+
+**Ingredients that might be present but I can't see clearly:**
+- [Potential ingredient 1]: [estimated portion]  
+- [Potential ingredient 2]: [estimated portion]
+- [etc.]
+
+**Questions:**
+1. Are any identified foods incorrect or wrong portion size?
+2. Are any typical ingredients present but not visible in the photo?
+
+Provide the detailed ingredient analysis for $userInput:"""
+        } else {
+            // Check if user confirmed the dish - trigger structured ingredient analysis
+            val confirmationKeywords = listOf("yes", "correct", "right", "that's right", "confirmed", "chicken pad thai")
+            val isConfirmation = confirmationKeywords.any { keyword -> 
+                userInput.lowercase().contains(keyword) 
+            }
+            
+            if (isConfirmation) {
+                // User confirmed - do structured ingredient analysis
+                """Great! Now that we've confirmed this is Chicken Pad Thai, let me analyze the ingredients systematically.
+
+REASONING PROCESS:
+1. First, identify clearly visible ingredients in the photo
+2. Second, consider typical Chicken Pad Thai ingredients that might be present but hard to see
+3. Present structured lists with estimated quantities
+4. Ask for user confirmation and corrections
+
+STRUCTURED INGREDIENT ANALYSIS:
+
+**Ingredients I can identify from the photo:**
+[Count the visible ingredients and list them with quantities]
+
+**Ingredients that may be present but I can't see clearly (typical for Chicken Pad Thai):**
+[List common Chicken Pad Thai ingredients not clearly visible]
+
+**Questions:**
+1. Are any identified foods incorrect or wrong portion size?
+2. Are any typical ingredients present but not visible in the photo?
+
+Format your response with clear counts and specific quantities:"""
+            } else {
+                // Continue with normal conversation flow
+                """You are continuing a nutrition analysis conversation. The user provided feedback: "$userInput"
 
 ANALYZE their feedback and respond appropriately:
 
@@ -230,25 +318,22 @@ IF they are providing corrections or additions to ingredients:
 - Once they seem satisfied, offer to proceed to nutritional analysis
 
 IF they want to proceed to nutritional analysis:
-- Present the final confirmed ingredient list in this format:
-**Final Ingredient List:**
-- [Ingredient]: [portion]
-- [Ingredient]: [portion]
-- [etc.]
+- Present the final confirmed ingredient list
+- Ask: "Should I proceed to calculate the nutritional information for these items?"
 
-Then ask: "Should I proceed to calculate the nutritional information for these items?"
-
-IF they confirm nutritional analysis:
-- Convert the ingredients to a structured nutritional breakdown
-- Show calories, protein, carbs, fat for each item
-- Provide totals
-- Ask if they want to make adjustments or save to Health Connect
+IF they want corrections to nutritional data:
+- Acknowledge their feedback
+- Update the nutritional information
+- Present updated totals
+- Ask if they want to save to Health Connect
 
 MAINTAIN the structured, reasoning-based approach throughout the conversation.
 
 User's feedback: "$userInput"
 
 Respond appropriately based on where we are in the analysis process:"""
+            }
+        }
     }
 
     private fun buildTextAnalysisPrompt(userInput: String): String {
@@ -377,8 +462,15 @@ Use this structured approach:"""
                         
                         if (done) {
                             // Mark message as complete
-                            updateStreamingMessage(currentMessageId!!, responseBuilder.toString(), false)
-                            continuation.resume(responseBuilder.toString()) {}
+                            val finalResponse = responseBuilder.toString()
+                            updateStreamingMessage(currentMessageId!!, finalResponse, false)
+                            
+                            // Log the complete response for debugging
+                            Log.d(TAG, "=== COMPLETE AI RESPONSE ===")
+                            Log.d(TAG, finalResponse)
+                            Log.d(TAG, "=== END RESPONSE (${finalResponse.length} chars) ===")
+                            
+                            continuation.resume(finalResponse) {}
                         }
                     }
                 }
@@ -427,12 +519,13 @@ $content<end_of_turn>
     private suspend fun processAnalysisResult(response: String) {
         Log.d(TAG, "Processing conversational response: ${response.take(100)}...")
         
-        // Check if the response contains a final ingredient list that we should process
-        if (response.contains("**Final Ingredient List:**") || 
-            response.contains("**Nutritional Information:**") ||
-            response.contains("should I proceed to calculate")) {
+        // Check if the response contains ingredient lists that we should process
+        if (response.contains("**Ingredients I can identify") || 
+            response.contains("**Ingredients that may be present") ||
+            response.contains("**Final Ingredient List:**") || 
+            response.contains("**Nutritional Information:**")) {
             
-            Log.d(TAG, "Response may contain nutritional analysis - checking for structured data")
+            Log.d(TAG, "Response contains ingredient analysis - extracting for nutrition lookup")
             
             // Try to extract any ingredient lists or nutritional data
             tryExtractNutritionalData(response)
@@ -568,58 +661,192 @@ $content<end_of_turn>
         awaitingUserResponse = false
         
         // Check if user wants to proceed to nutritional analysis
-        val proceedKeywords = listOf("yes", "proceed", "calculate", "nutrition", "analyze", "continue", "go ahead", "sure")
+        val proceedKeywords = listOf("looks good", "correct", "yes", "proceed", "calculate", "nutrition", "analyze", "continue", "go ahead", "sure")
         val userWantsToProceed = proceedKeywords.any { keyword -> 
             userResponse.lowercase().contains(keyword) 
         }
         
-        val prompt = if (userWantsToProceed && userResponse.length < 50) {
-            // User seems to want nutritional analysis
-            """The user confirmed they want to proceed with nutritional analysis: "$userResponse"
+        if (userWantsToProceed && userResponse.length < 100) {
+            // User confirmed ingredient list - get JSON and process nutrition directly
+            Log.d(TAG, "User confirmed ingredients - requesting JSON for direct nutrition lookup")
+            
+            // Request structured JSON data instead of streaming response
+            val prompt = """The user confirmed the ingredient list: "$userResponse"
 
-Now provide a structured nutritional breakdown following this format:
+Output ONLY a JSON object with the confirmed ingredients for nutrition lookup:
 
-**Final Confirmed Ingredient List:**
-- [List each ingredient with final confirmed portions]
+{
+  "confirmedIngredients": [
+    {"name": "rice noodles", "quantity": 1.5, "unit": "cups cooked"},
+    {"name": "chicken breast", "quantity": 4, "unit": "oz"},
+    {"name": "bean sprouts", "quantity": 0.25, "unit": "cup"},
+    {"name": "lime", "quantity": 1, "unit": "wedge"}
+  ]
+}
 
-**Nutritional Analysis:**
-For each ingredient, provide:
-- [Ingredient]: [portion] → [calories] cal, [protein]g protein, [carbs]g carbs, [fat]g fat
-
-**Total Meal Summary:**
-- Total Calories: [sum] cal
-- Total Protein: [sum]g
-- Total Carbs: [sum]g  
-- Total Fat: [sum]g
-
-**Would you like to save this meal data to Health Connect for tracking?**
-
-Provide the complete nutritional breakdown:"""
+Output ONLY the JSON, nothing else:"""
+            
+            // Use one-shot session for JSON response (no streaming)
+            val jsonResponse = callAIForJSON(prompt, includeImage = isMultimodal)
+            processJSONIngredients(jsonResponse)
         } else {
             // Continue refining the ingredient list
-            """You are continuing a nutrition analysis conversation. The user provided feedback: "$userResponse"
+            val prompt = """You are continuing a nutrition analysis conversation. The user provided feedback: "$userResponse"
 
 RESPOND based on their feedback:
 
 IF they are correcting or adding ingredients:
 - Acknowledge their corrections
-- Update the ingredient list
-- Ask if there are other changes needed
-- Once satisfied, ask: "Should I proceed to calculate the nutritional information?"
+- Update the ingredient list using the format:
+  **[n] ingredients I can identify from the photo:**
+  **[y] ingredients that may be present but I can't see clearly:**
+- Ask the 2 essential questions only
 
 IF they seem satisfied with the ingredient list:
-- Present the **Final Ingredient List** with confirmed portions
+- Present the **Final Confirmed Ingredient List** with specific portions
 - Ask: "Should I proceed to calculate the nutritional information for these items?"
 
-MAINTAIN the structured format with **bold headers** and bullet points.
+MAINTAIN the structured format with numbered counts and bullet points.
 
 User feedback: "$userResponse"
 
 Continue the structured analysis:"""
+            
+            val response = callAI(prompt, includeImage = isMultimodal)
+            processAnalysisResult(response)
         }
+    }
+    
+    private suspend fun showNutritionAnalysisWithCounts() {
+        val items = _currentMealNutrition.value
+        if (items.isEmpty()) return
         
-        val response = callAI(prompt, includeImage = isMultimodal)
-        processAnalysisResult(response)
+        val knownItems = items.filter { it.calories > 0 }
+        val unknownItems = items.filter { it.calories == 0 }
+        
+        val totalCalories = knownItems.sumOf { it.calories }
+        val totalProtein = knownItems.mapNotNull { it.protein }.sum()
+        val totalCarbs = knownItems.mapNotNull { it.totalCarbs }.sum()
+        val totalFat = knownItems.mapNotNull { it.totalFat }.sum()
+
+        val nutritionSummary = buildString {
+            appendLine("**Nutrition Analysis Complete!**")
+            appendLine()
+            
+            if (knownItems.isNotEmpty()) {
+                appendLine("**Known Items (${knownItems.size}):**")
+                knownItems.forEach { item ->
+                    appendLine("• ${item.foodName} - ${item.calories} cal")
+                }
+                appendLine()
+                appendLine("**Total from Known Items:**")
+                appendLine("• Calories: $totalCalories cal")
+                appendLine("• Protein: ${totalProtein.toInt()}g")
+                appendLine("• Carbs: ${totalCarbs.toInt()}g")
+                appendLine("• Fat: ${totalFat.toInt()}g")
+                appendLine()
+            }
+            
+            if (unknownItems.isNotEmpty()) {
+                appendLine("**Unknown Items (${unknownItems.size}) - No nutrition data found:**")
+                unknownItems.forEach { item ->
+                    appendLine("• ${item.foodName}")
+                }
+                appendLine()
+            }
+            
+            appendLine("**Is this correct? Any adjustments needed?**")
+            if (totalCalories > 0) {
+                appendLine("If this looks good, would you like to save to Health Connect?")
+            }
+        }
+
+        addMessage(ChatMessage(
+            text = nutritionSummary,
+            isFromUser = false
+        ))
+    }
+    
+    private suspend fun callAIForJSON(prompt: String, includeImage: Boolean = false): String {
+        return withContext(Dispatchers.IO) {
+            try {
+                // Use one-shot session with deterministic settings for JSON
+                val session = appContainer.getReadyVisionSession() // Uses deterministic settings
+                
+                // Add image to session if needed
+                if (includeImage && currentImageBitmap != null) {
+                    Log.d(TAG, "Adding image for JSON analysis: ${currentImageBitmap!!.width}x${currentImageBitmap!!.height}")
+                    val mpImage = BitmapImageBuilder(currentImageBitmap!!).build()
+                    session.addImage(mpImage)
+                }
+                
+                // Build Gemma prompt for JSON output
+                val fullPrompt = buildGemmaPrompt(prompt)
+                session.addQueryChunk(fullPrompt)
+                
+                // Use blocking call for JSON (no streaming needed)
+                val response = session.generateResponse()
+                
+                Log.d(TAG, "JSON Response received: ${response.take(200)}...")
+                response
+            } catch (e: Exception) {
+                Log.e(TAG, "Error calling AI for JSON", e)
+                throw e
+            }
+        }
+    }
+    
+    private suspend fun processJSONIngredients(jsonResponse: String) {
+        try {
+            // Extract JSON from response
+            val jsonString = extractJsonFromResponse(jsonResponse)
+            val json = JSONObject(jsonString)
+            
+            val confirmedIngredients = json.getJSONArray("confirmedIngredients")
+            val extractedItems = mutableListOf<com.stel.gemmunch.agent.AnalyzedFoodItem>()
+            
+            // Show progress message
+            addMessage(ChatMessage(
+                text = "Processing ${confirmedIngredients.length()} ingredients for nutrition lookup...",
+                isFromUser = false
+            ))
+            
+            // Process each ingredient
+            for (i in 0 until confirmedIngredients.length()) {
+                val ingredient = confirmedIngredients.getJSONObject(i)
+                val foodName = ingredient.getString("name")
+                val quantity = ingredient.getDouble("quantity")
+                val unit = ingredient.getString("unit")
+                
+                Log.d(TAG, "Looking up nutrition: $foodName ($quantity $unit)")
+                
+                // Lookup nutrition data
+                try {
+                    val nutritionData = withContext(Dispatchers.IO) {
+                        appContainer.nutritionSearchService.searchNutrition(
+                            foodName = foodName,
+                            servingSize = quantity,
+                            servingUnit = unit
+                        )
+                    }
+                    
+                    nutritionData?.let { extractedItems.add(it) }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error looking up nutrition for $foodName", e)
+                }
+            }
+            
+            // Update nutrition data and show results
+            _currentMealNutrition.value = extractedItems
+            showNutritionAnalysisWithCounts()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error processing JSON ingredients: $jsonResponse", e)
+            addMessage(ChatMessage(
+                text = "I had trouble processing the ingredient list. Let me try again with a different approach.",
+                isFromUser = false
+            ))
+        }
     }
 
     private fun showNutritionSummary() {

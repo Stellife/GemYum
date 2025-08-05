@@ -211,7 +211,7 @@ class DefaultAppContainer(
                     
                     val llmInferenceOptions = LlmInference.LlmInferenceOptions.builder()
                         .setModelPath(visionModelFile.absolutePath)
-                        .setMaxTokens(800)
+                        .setMaxTokens(1500) // Increased for conversational responses
                         .setMaxNumImages(1)
                         .setPreferredBackend(LlmInference.Backend.GPU) // Use GPU backend
                         .build()
@@ -268,7 +268,7 @@ class DefaultAppContainer(
                 
                 val llmInferenceOptions = LlmInference.LlmInferenceOptions.builder()
                     .setModelPath(visionModelFile.absolutePath)
-                    .setMaxTokens(800)
+                    .setMaxTokens(1500) // Increased for conversational responses
                     .setMaxNumImages(1)
                     .setPreferredBackend(preferredBackend) // Manual backend selection
                     .build()
@@ -559,7 +559,7 @@ class DefaultAppContainer(
             
             val optionsBuilder = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(visionModelFile.absolutePath)
-                .setMaxTokens(800) // Match the token limit used in initialization
+                .setMaxTokens(1500) // Increased for conversational responses
                 .setMaxNumImages(1)
                 .setPreferredBackend(preferredBackend) // Use GPU when available
             

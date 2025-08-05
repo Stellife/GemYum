@@ -8,6 +8,7 @@ import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.QuestionAnswer
 import androidx.compose.material.icons.outlined.TextFields
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -80,6 +81,21 @@ fun HomeScreen(navController: NavController) {
                         sessionManager.prewarmForDestination("chat/text")
                     }
                     navController.navigate("chat/false")
+                }
+            )
+            
+            // Spacer for visual separation
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            // Nutrient Database Lookup
+            ModeCard(
+                title = "Nutrient DB",
+                description = "Search and explore nutrition database",
+                estimatedTime = "Instant lookup",
+                icon = Icons.Outlined.Search,
+                backgroundColor = MaterialTheme.colorScheme.surfaceVariant,
+                onClick = {
+                    navController.navigate("nutrient-db")
                 }
             )
             
