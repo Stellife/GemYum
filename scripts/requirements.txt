@@ -1,0 +1,14 @@
+# Python dependencies for building the nutrition database
+
+# Core dependencies
+requests>=2.31.0        # For downloading data
+pandas>=2.0.0          # For data processing
+numpy>=1.24.0          # For numerical operations
+
+# Optional but recommended
+tqdm>=4.65.0           # For progress bars during build
+python-dotenv>=1.0.0   # For environment variables
+
+# For testing (optional)
+pytest>=7.4.0          # For running tests
+pillow>=10.0.0         # For image handling in tests
