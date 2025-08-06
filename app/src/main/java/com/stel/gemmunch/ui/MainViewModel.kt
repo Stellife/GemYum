@@ -65,6 +65,16 @@ class MainViewModel(
     private suspend fun initializeAiComponents() {
         _uiState.update { it.copy(isAiReady = false, downloadState = MultiDownloadState.Checking) }
 
+        // Check for bundled models or sideloaded models
+        Log.i(TAG, "Checking for models...")
+        _uiState.update { it.copy(initializationProgress = "Looking for AI models...") }
+        
+        // Try to copy models from external storage or bundled assets
+        if (com.stel.gemmunch.utils.BundledModelHelper.copyBundledModelsIfNeeded(application)) {
+            Log.i(TAG, "Models found and copied successfully")
+            _uiState.update { it.copy(initializationProgress = "Models loaded, initializing...") }
+        }
+
         initMetrics.startSubPhase("ViewModelInitialization", "CheckModels")
         val essentialModels = ModelRegistry.getEssentialModelsForSetup()
         val modelFiles = essentialModels.mapNotNull { asset ->
@@ -79,15 +89,22 @@ class MainViewModel(
                 // Update UI to show we're initializing
                 _uiState.update { it.copy(
                     downloadState = MultiDownloadState.AllComplete(modelFiles), 
-                    initializationProgress = "Loading AI models into memory..."
+                    initializationProgress = "Starting AI initialization (this may take 2-3 minutes on first launch)..."
                 ) }
                 
                 // Set up progress monitoring
                 viewModelScope.launch {
+                    var startTime = System.currentTimeMillis()
                     appContainer.modelStatus.collect { status ->
+                        val elapsedSeconds = (System.currentTimeMillis() - startTime) / 1000
                         val progressText = when(status) {
-                            com.stel.gemmunch.ModelStatus.INITIALIZING -> "Loading AI models into memory..."
-                            com.stel.gemmunch.ModelStatus.PREPARING_SESSION -> "Preparing inference session (almost ready)..."
+                            com.stel.gemmunch.ModelStatus.INITIALIZING -> 
+                                if (elapsedSeconds < 10) "Loading AI models into memory (this may take 2-3 minutes)..."
+                                else if (elapsedSeconds < 30) "Loading AI models... (${elapsedSeconds}s elapsed)"
+                                else if (elapsedSeconds < 60) "Still loading AI models... (${elapsedSeconds}s - this is normal on first launch)"
+                                else "Loading AI models... (${elapsedSeconds/60}m ${elapsedSeconds%60}s - almost there!)"
+                            com.stel.gemmunch.ModelStatus.PREPARING_SESSION -> 
+                                "Preparing inference session (finalizing in a few seconds)..."
                             com.stel.gemmunch.ModelStatus.READY -> null // Clear progress when ready
                             com.stel.gemmunch.ModelStatus.RUNNING_INFERENCE -> "Processing..."
                             com.stel.gemmunch.ModelStatus.CLEANUP -> "Cleaning up..."
@@ -238,6 +255,16 @@ class MainViewModel(
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to handle re-analysis request", e)
             }
+        }
+    }
+    
+    /**
+     * Retry model initialization after storage permissions are granted
+     */
+    fun retryModelInitialization() {
+        viewModelScope.launch(Dispatchers.IO) {
+            Log.i(TAG, "Retrying model initialization after permission grant")
+            initializeAiComponents()
         }
     }
 }

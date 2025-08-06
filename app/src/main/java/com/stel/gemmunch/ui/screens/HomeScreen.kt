@@ -86,7 +86,7 @@ fun HomeScreen(
                             }
                         }
                         Text(
-                            text = "⚠️ First-time initialization takes 30-60 seconds. Subsequent launches will be much faster.",
+                            text = "⚠️ First-time initialization can take 2-3 minutes as models are loaded into memory. Subsequent launches will be much faster (10-30 seconds).",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                         )

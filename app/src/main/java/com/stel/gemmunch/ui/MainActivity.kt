@@ -1,13 +1,20 @@
 package com.stel.gemmunch.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.ui.text.font.FontWeight
@@ -44,11 +51,23 @@ import com.stel.gemmunch.viewmodels.NutrientDBViewModelFactory
 
 class MainActivity : ComponentActivity() {
     
+    companion object {
+        private const val TAG = "MainActivity"
+        private const val STORAGE_PERMISSION_REQUEST_CODE = 1001
+    }
+    
     // Health Connect permission launcher - will be initialized in onCreate
     private lateinit var healthConnectPermissionLauncher: ActivityResultLauncher<Set<String>>
+    
+    // Storage permission launcher for Android 11+
+    private lateinit var storagePermissionLauncher: ActivityResultLauncher<String>
+    
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
+        // Request storage permissions if needed
+        requestStoragePermissions()
 
         val appContainer = (application as GemMunchApplication).container
 
@@ -71,6 +90,19 @@ class MainActivity : ComponentActivity() {
         
         val nutrientDBViewModel: NutrientDBViewModel by viewModels {
             NutrientDBViewModelFactory(appContainer)
+        }
+        
+        // Initialize storage permission launcher
+        storagePermissionLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { isGranted ->
+            if (isGranted) {
+                Log.i(TAG, "Storage permission granted")
+                // Try to copy models again after permission is granted
+                mainViewModel.retryModelInitialization()
+            } else {
+                Log.w(TAG, "Storage permission denied")
+            }
         }
         
         // Initialize Health Connect permission launcher
@@ -106,6 +138,50 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 }
+            }
+        }
+    }
+    
+    private fun requestStoragePermissions() {
+        when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                // Android 11+ uses scoped storage, but we still need to check for MANAGE_EXTERNAL_STORAGE
+                if (!Environment.isExternalStorageManager()) {
+                    Log.i(TAG, "Requesting MANAGE_EXTERNAL_STORAGE permission")
+                    // For Android 11+, we need special permission handling
+                    // But for now, we'll work with standard permissions
+                }
+            }
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
+                // Android 6-10: Check for READ_EXTERNAL_STORAGE permission
+                if (ContextCompat.checkSelfPermission(
+                        this,
+                        Manifest.permission.READ_EXTERNAL_STORAGE
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    Log.i(TAG, "Requesting READ_EXTERNAL_STORAGE permission")
+                    storagePermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+                } else {
+                    Log.i(TAG, "READ_EXTERNAL_STORAGE permission already granted")
+                }
+            }
+        }
+    }
+    
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == STORAGE_PERMISSION_REQUEST_CODE) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Log.i(TAG, "Storage permission granted via onRequestPermissionsResult")
+                // Permission granted, try to copy models
+                val mainViewModel: MainViewModel by viewModels {
+                    MainViewModelFactory(application, (application as GemMunchApplication).container)
+                }
+                mainViewModel.retryModelInitialization()
             }
         }
     }

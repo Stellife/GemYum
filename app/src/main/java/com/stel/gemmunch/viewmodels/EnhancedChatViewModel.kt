@@ -647,13 +647,43 @@ $content<end_of_turn>
     private fun extractJsonFromResponse(response: String): String {
         // Try to extract JSON from response
         val startIndex = response.indexOf('{')
-        val endIndex = response.lastIndexOf('}')
+        var endIndex = response.lastIndexOf('}')
         
-        return if (startIndex >= 0 && endIndex > startIndex) {
-            response.substring(startIndex, endIndex + 1)
+        if (startIndex >= 0) {
+            // If we found a start but no valid end, try to complete the JSON
+            if (endIndex <= startIndex) {
+                // Look for incomplete JSON patterns and try to complete them
+                val partialJson = response.substring(startIndex)
+                
+                // Count open brackets to determine how many closes we need
+                var openBrackets = 0
+                var openSquare = 0
+                for (char in partialJson) {
+                    when (char) {
+                        '{' -> openBrackets++
+                        '}' -> openBrackets--
+                        '[' -> openSquare++
+                        ']' -> openSquare--
+                    }
+                }
+                
+                // Build completion
+                val completion = StringBuilder(partialJson)
+                
+                // Close any open arrays
+                repeat(openSquare) { completion.append(']') }
+                
+                // Close any open objects
+                repeat(openBrackets) { completion.append('}') }
+                
+                Log.w(TAG, "Completed incomplete JSON. Added $openSquare ] and $openBrackets }")
+                return completion.toString()
+            }
+            
+            return response.substring(startIndex, endIndex + 1)
         } else {
             // Construct JSON from plain text response
-            """{"foods": [], "needsClarification": true, "question": "Could you please describe your meal in more detail?"}"""
+            return """{"confirmedIngredients": [], "needsClarification": true, "question": "Could you please describe your meal in more detail?"}"""
         }
     }
 
@@ -858,9 +888,21 @@ Continue the structured analysis:"""
         try {
             // Extract JSON from response
             val jsonString = extractJsonFromResponse(jsonResponse)
-            val json = JSONObject(jsonString)
+            Log.d(TAG, "Extracted JSON for parsing: $jsonString")
             
-            val confirmedIngredients = json.getJSONArray("confirmedIngredients")
+            val json = try {
+                JSONObject(jsonString)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to parse JSON, attempting repair", e)
+                // Try to repair common JSON issues
+                val repairedJson = jsonString
+                    .replace(",]", "]")  // Remove trailing commas in arrays
+                    .replace(",}", "}")   // Remove trailing commas in objects
+                    .replace(",,", ",")   // Remove double commas
+                JSONObject(repairedJson)
+            }
+            
+            val confirmedIngredients = json.optJSONArray("confirmedIngredients") ?: JSONArray()
             val extractedItems = mutableListOf<com.stel.gemmunch.agent.AnalyzedFoodItem>()
             
             // Show progress message

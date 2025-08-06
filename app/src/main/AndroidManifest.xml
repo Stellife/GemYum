@@ -8,6 +8,10 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <!-- For Android 11+ to access all files -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
     
     <!-- Health Connect permissions for nutrition only -->
     <uses-permission android:name="android.permission.health.READ_NUTRITION"/>
@@ -28,6 +32,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.GemYum"
+        android:requestLegacyExternalStorage="true"
         tools:targetApi="35">
         <activity
             android:name=".ui.MainActivity"

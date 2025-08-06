@@ -20,8 +20,10 @@ release/
 .gradle/
 build/
 
-# Local configuration file
+# Local configuration files (NEVER commit these!)
 local.properties
+gradle.properties
+!gradle.properties.template
 
 # Proguard folder
 proguard/
@@ -108,7 +110,32 @@ ui_dump*.xml
 models/gemma*
 models/*/
 
-# Nutrition database (build locally)
-nutrients.db
-app/src/main/assets/nutrients.db
+# Large model files (don't commit to repo)
+*.task
+gemma-3n-*.task
+bundled_models/
+GemYum-v1.0-offline-package/
+GemYum-v1.0-offline-package.zip
+GemYum-v1.0-release.apk
+GemYum-v1.0-sideload.apk
+
+# Keep the nutrients database (it's essential and small)
+!app/src/main/assets/databases/nutrients.db
+
+# Private notes and planning
+ProjectPlanning/
+ClaudeDevelopmentNotes.md
+2025-*.txt
+VIDEO_SCRIPT.md
+PROBLEM_STATEMENT.md
+DEMO_FLOW.md
+SUBMISSION_CHECKLIST.md
+PACKAGE_CONTENTS.md
+
+# Scripts data (can be regenerated)
 scripts/nutrition_data/
+scripts/__pycache__/
+scripts/*.db
+scripts/*.db-journal
+scripts/*.db.gz
+!scripts/build_ultimate_nutrients_db.py

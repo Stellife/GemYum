@@ -14,11 +14,11 @@ android {
     compileSdk = 36 // Adjusted to match stable dependencies
 
     defaultConfig {
-        applicationId = "com.stel.gemmunch.debug"
-        minSdk = 35
+        applicationId = "com.stel.gemyum"
+        minSdk = 31  // Required for AI Core
         targetSdk = 36
         versionCode = 1
-        versionName = "1.0-debug"
+        versionName = "1.0"
 
         buildConfigField(
             "String",
@@ -29,7 +29,7 @@ android {
         buildConfigField(
             "String",
             "USDA_API_KEY",
-            "\"${project.findProperty("USDA_API_KEY") ?: "uJiMUGGjocfI5P4F5j3g4oT6DCqGl0f0i7kwT1R4"}\""  // TODO: Move to gradle.properties before production
+            "\"${project.findProperty("USDA_API_KEY") ?: "YOUR_USDA_API_KEY_HERE"}\""  // Get your key from https://fdc.nal.usda.gov/api-guide.html
         )
 
 
@@ -42,10 +42,15 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("debug") // Use debug signing for now
+        }
+        debug {
+            applicationIdSuffix = ".debug"
         }
     }
     compileOptions {
