@@ -14,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -33,7 +34,11 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(navController: NavController) {
+fun HomeScreen(
+    navController: NavController,
+    isAiReady: Boolean = true, // Default to true for backwards compatibility
+    initializationProgress: String? = null
+) {
     val sessionManager = LocalSessionManager.current
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     val context = LocalContext.current
@@ -44,6 +49,51 @@ fun HomeScreen(navController: NavController) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+            // Show initialization banner if AI is not ready
+            if (!isAiReady && initializationProgress != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(32.dp),
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Column {
+                                Text(
+                                    text = "AI Model Initializing",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Text(
+                                    text = initializationProgress,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                        Text(
+                            text = "⚠️ First-time initialization takes 30-60 seconds. Subsequent launches will be much faster.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
             // Header
             Text(
                 "Gemma 3n Food Analysis Types",
@@ -58,6 +108,7 @@ fun HomeScreen(navController: NavController) {
                 estimatedTime = "<60 seconds analysis",
                 icon = Icons.Outlined.CameraAlt,
                 backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                enabled = isAiReady,
                 onClick = {
                     coroutineScope.launch {
                         sessionManager.prewarmForDestination("camera/singleshot")
@@ -69,9 +120,10 @@ fun HomeScreen(navController: NavController) {
             ModeCard(
                 title = "Deep Chat: Multimodal + Token Async",
                 description = "Image analysis -> nutrition record",
-                estimatedTime = "Deep analysis",
+                estimatedTime = "🧪 Experimental",
                 icon = Icons.Outlined.QuestionAnswer,
                 backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                enabled = isAiReady,
                 onClick = {
                     coroutineScope.launch {
                         sessionManager.prewarmForDestination("chat/multimodal")
@@ -83,9 +135,10 @@ fun HomeScreen(navController: NavController) {
             ModeCard(
                 title = "Text-Only Chat: Reasoning Model",
                 description = "No vision inference, Function Calling",
-                estimatedTime = "More structured reasoning",
+                estimatedTime = "🧪 Experimental",
                 icon = Icons.Outlined.TextFields,
                 backgroundColor = MaterialTheme.colorScheme.tertiaryContainer,
+                enabled = isAiReady,
                 onClick = {
                     coroutineScope.launch {
                         sessionManager.prewarmForDestination("chat/text")
@@ -233,14 +286,19 @@ fun ModeCard(
     estimatedTime: String,
     icon: ImageVector,
     backgroundColor: Color,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     Card(
-        onClick = onClick,
+        onClick = if (enabled) onClick else { {} },
+        enabled = enabled,
         modifier = Modifier
             .fillMaxWidth()
             .height(120.dp),
-        colors = CardDefaults.cardColors(containerColor = backgroundColor)
+        colors = CardDefaults.cardColors(
+            containerColor = if (enabled) backgroundColor else backgroundColor.copy(alpha = 0.5f),
+            disabledContainerColor = backgroundColor.copy(alpha = 0.5f)
+        )
     ) {
         Row(
             modifier = Modifier
@@ -251,7 +309,7 @@ fun ModeCard(
             Icon(
                 icon,
                 contentDescription = null,
-                modifier = Modifier.size(48.dp),
+                modifier = Modifier.size(48.dp).alpha(if (enabled) 1f else 0.5f),
                 tint = MaterialTheme.colorScheme.onSecondaryContainer
             )
             
@@ -261,26 +319,29 @@ fun ModeCard(
                 Text(
                     title,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.6f)
                 )
                 Text(
                     description,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.6f)
                 )
                 Text(
                     estimatedTime,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.6f),
                     modifier = Modifier.padding(top = 4.dp)
                 )
             }
             
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (enabled) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

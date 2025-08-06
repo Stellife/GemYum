@@ -23,6 +23,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.io.File
 
 private const val TAG = "AppContainer"
@@ -403,7 +405,9 @@ class DefaultAppContainer(
             val startTime = System.currentTimeMillis()
             
             val session = withContext(Dispatchers.IO) {
-                LlmInferenceSession.createFromOptions(inference, options)
+                withTimeout(30000) { // 30 second timeout for pre-warming too
+                    LlmInferenceSession.createFromOptions(inference, options)
+                }
             }
             
             val duration = System.currentTimeMillis() - startTime
@@ -415,10 +419,14 @@ class DefaultAppContainer(
             
             Log.d(TAG, "✅ Session #$sessionCount pre-warmed and ready in ${duration}ms")
             _modelStatus.value = ModelStatus.READY
+        } catch (e: TimeoutCancellationException) {
+            Log.e(TAG, "Pre-warm session timed out after 30s - hardware may be in corrupted state", e)
+            _modelStatus.value = ModelStatus.READY // Still mark as ready, just without pre-warming
         } catch (e: Exception) {
             if (e !is kotlinx.coroutines.CancellationException) {
                 Log.e(TAG, "Failed to pre-warm session", e)
             }
+            _modelStatus.value = ModelStatus.READY // Still mark as ready, just without pre-warming
         } finally {
             isPrewarmingInProgress = false
         }
@@ -501,7 +509,11 @@ class DefaultAppContainer(
         val startTime = System.currentTimeMillis()
         
         try {
-            val session = LlmInferenceSession.createFromOptions(inference, options)
+            // Add timeout protection to prevent stalls
+            val session = withTimeout(30000) { // 30 second timeout
+                Log.d(TAG, "Creating LlmInferenceSession with 30s timeout...")
+                LlmInferenceSession.createFromOptions(inference, options)
+            }
             val duration = System.currentTimeMillis() - startTime
             Log.d(TAG, "✅ Fresh session created in ${duration}ms")
             
@@ -515,8 +527,15 @@ class DefaultAppContainer(
             Log.d(TAG, "📌 Session #$sessionCount now in use - will pre-warm after cleanup")
             
             return@withContext session
+        } catch (e: TimeoutCancellationException) {
+            Log.e(TAG, "Session creation timed out after 30 seconds - hardware may be in corrupted state", e)
+            _modelStatus.value = ModelStatus.INITIALIZING
+            isSessionInUse = false
+            throw Exception("AI session creation timed out. Please restart the app.", e)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create session", e)
+            _modelStatus.value = ModelStatus.INITIALIZING
+            isSessionInUse = false
             throw Exception("Failed to create AI session: ${e.message}", e)
         }
     }

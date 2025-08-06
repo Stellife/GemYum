@@ -1,0 +1,123 @@
+{
+  "glycemic_index_tests": {
+    "high_gi": [
+      {
+        "name": "white_bread_sandwich.jpg",
+        "expected_gi": 75
+      },
+      {
+        "name": "baked_potato.jpg",
+        "expected_gi": 85
+      },
+      {
+        "name": "cornflakes.jpg",
+        "expected_gi": 81
+      }
+    ],
+    "medium_gi": [
+      {
+        "name": "banana.jpg",
+        "expected_gi": 51
+      },
+      {
+        "name": "orange_juice.jpg",
+        "expected_gi": 50
+      },
+      {
+        "name": "popcorn.jpg",
+        "expected_gi": 65
+      }
+    ],
+    "low_gi": [
+      {
+        "name": "apple.jpg",
+        "expected_gi": 36
+      },
+      {
+        "name": "greek_yogurt.jpg",
+        "expected_gi": 11
+      },
+      {
+        "name": "chickpeas.jpg",
+        "expected_gi": 28
+      }
+    ]
+  },
+  "restaurant_specific": {
+    "chipotle": [
+      {
+        "name": "chipotle_bowl_chicken.jpg",
+        "items": [
+          "chicken",
+          "rice",
+          "beans",
+          "salsa"
+        ]
+      },
+      {
+        "name": "chipotle_burrito.jpg",
+        "items": [
+          "burrito",
+          "carnitas"
+        ]
+      },
+      {
+        "name": "chipotle_tacos.jpg",
+        "items": [
+          "soft taco",
+          "barbacoa"
+        ]
+      }
+    ],
+    "mcdonalds": [
+      {
+        "name": "big_mac.jpg",
+        "expected_gi": 66
+      },
+      {
+        "name": "mcnuggets.jpg",
+        "expected_gi": 46
+      },
+      {
+        "name": "apple_pie.jpg",
+        "expected_gi": 68
+      }
+    ],
+    "vietnamese": [
+      {
+        "name": "pho_beef.jpg",
+        "expected_gi": 40
+      },
+      {
+        "name": "banh_mi.jpg",
+        "expected_gi": 65
+      },
+      {
+        "name": "spring_rolls.jpg",
+        "expected_gi": 30
+      }
+    ]
+  },
+  "quantity_tests": {
+    "single_items": [
+      {
+        "name": "one_taco.jpg",
+        "quantity": 1
+      },
+      {
+        "name": "one_apple.jpg",
+        "quantity": 1
+      }
+    ],
+    "multiple_items": [
+      {
+        "name": "three_tacos.jpg",
+        "quantity": 3
+      },
+      {
+        "name": "dozen_donuts.jpg",
+        "quantity": 12
+      }
+    ]
+  }
+}

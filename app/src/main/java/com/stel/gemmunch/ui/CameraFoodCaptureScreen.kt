@@ -60,6 +60,12 @@ import com.google.accompanist.permissions.shouldShowRationale
 import android.Manifest
 import android.util.Log
 import android.widget.Toast
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 
 private const val TAG = "CameraFoodCaptureScreen"
 
@@ -427,6 +433,41 @@ fun CameraFoodCaptureScreen(
                         val modelDisplayName = VisionModelPreferencesManager.getVisionModelDisplayName(selectedModel)
                         val reasoningMode = ImageReasoningPreferencesManager.getSelectedMode()
                         
+                        // RAG Enhancement Indicator
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                            ),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Filled.CloudSync,
+                                    contentDescription = "RAG Active",
+                                    tint = MaterialTheme.colorScheme.tertiary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        "✨ RAG-Enhanced Recognition",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        "Using contextual knowledge for better accuracy",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                                    )
+                                }
+                            }
+                        }
+                        
                         AnalysisProgressDisplay(
                             progress = state.progress,
                             modelName = modelDisplayName,
@@ -446,6 +487,20 @@ fun CameraFoodCaptureScreen(
                     }
                 }
                 is FoodCaptureState.Success -> {
+                    // Check for hotdog easter egg!
+                    val hasHotdog = state.editableItems.any { item ->
+                        item.foodName.contains("hotdog", ignoreCase = true) || 
+                        item.foodName.contains("hot dog", ignoreCase = true) ||
+                        item.foodName.contains("hot-dog", ignoreCase = true)
+                    }
+                    
+                    // Show hotdog easter egg if detected
+                    if (hasHotdog) {
+                        item {
+                            HotdogNotHotdogEasterEgg()
+                        }
+                    }
+                    
                     // Performance metrics card at the top
                     state.originalAnalysis.performanceMetrics?.let { metrics ->
                         item {
@@ -1988,6 +2043,105 @@ fun AiDetailsDialog(
             }
         }
     }
+    }
+}
+
+@Composable
+fun HotdogNotHotdogEasterEgg() {
+    // Animation for the easter egg
+    val infiniteTransition = rememberInfiniteTransition(label = "hotdog")
+    
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(3000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rotation"
+    )
+    
+    val pulsate by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulsate"
+    )
+    
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF4CAF50).copy(alpha = 0.1f)
+        ),
+        border = BorderStroke(
+            width = 2.dp,
+            color = Color(0xFF4CAF50)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Rotating hotdog emoji
+                Text(
+                    text = "🌭",
+                    style = MaterialTheme.typography.headlineLarge,
+                    modifier = Modifier
+                        .rotate(rotation)
+                        .graphicsLayer(
+                            scaleX = pulsate,
+                            scaleY = pulsate
+                        )
+                )
+                
+                Spacer(modifier = Modifier.width(16.dp))
+                
+                Column {
+                    Text(
+                        text = "✅ HOTDOG!",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF4CAF50)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.width(16.dp))
+                
+                // Another rotating hotdog for balance
+                Text(
+                    text = "🌭",
+                    style = MaterialTheme.typography.headlineLarge,
+                    modifier = Modifier
+                        .rotate(-rotation)
+                        .graphicsLayer(
+                            scaleX = pulsate,
+                            scaleY = pulsate
+                        )
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Text(
+                text = "\"What would you say, if I told you, there is an app on the market...\"",
+                style = MaterialTheme.typography.bodySmall,
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }
 

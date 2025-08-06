@@ -1,0 +1,297 @@
+{
+  "description": "Test images for GemMunch food recognition app",
+  "created": "2025-08-05 13:18:20",
+  "total_images": 19,
+  "categories": {
+    "tacos": {
+      "description": "Various taco images to test GI=52",
+      "images": [
+        {
+          "filename": "hard_shell_tacos_3.jpg",
+          "category": "tacos",
+          "description": "3 hard shell tacos with beef",
+          "source_url": "https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=800",
+          "expected_results": {
+            "food_items": [
+              "taco"
+            ],
+            "glycemic_index": 52,
+            "glycemic_load_range": [
+              6.8,
+              31.2
+            ]
+          },
+          "download_timestamp": "2025-08-05 13:18:20"
+        },
+        {
+          "filename": "street_tacos.jpg",
+          "category": "tacos",
+          "description": "Street style tacos",
+          "source_url": "https://images.unsplash.com/photo-1551504734-5ee1c4a1479b?w=800",
+          "expected_results": {
+            "food_items": [
+              "taco"
+            ],
+            "glycemic_index": 52,
+            "glycemic_load_range": [
+              6.8,
+              31.2
+            ]
+          },
+          "download_timestamp": "2025-08-05 13:18:22"
+        }
+      ]
+    },
+    "burgers": {
+      "description": "Burger images to test GI=66",
+      "images": [
+        {
+          "filename": "classic_burger.jpg",
+          "category": "burgers",
+          "description": "Classic burger with fries",
+          "source_url": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800",
+          "expected_results": {
+            "food_items": [
+              "burger",
+              "hamburger",
+              "cheeseburger"
+            ],
+            "glycemic_index": 66,
+            "glycemic_load_range": [
+              20,
+              35
+            ]
+          },
+          "download_timestamp": "2025-08-05 13:18:24"
+        },
+        {
+          "filename": "double_burger.jpg",
+          "category": "burgers",
+          "description": "Double cheeseburger",
+          "source_url": "https://images.unsplash.com/photo-1551615593-ef5fe247e8f7?w=800",
+          "expected_results": {
+            "food_items": [
+              "burger",
+              "hamburger",
+              "cheeseburger"
+            ],
+            "glycemic_index": 66,
+            "glycemic_load_range": [
+              20,
+              35
+            ]
+          },
+          "download_timestamp": "2025-08-05 13:18:34"
+        }
+      ]
+    },
+    "pizza": {
+      "description": "Pizza images to test GI=60",
+      "images": [
+        {
+          "filename": "pepperoni_pizza.jpg",
+          "category": "pizza",
+          "description": "Pepperoni pizza",
+          "source_url": "https://images.unsplash.com/photo-1628840042765-356cda07504e?w=800",
+          "expected_results": {
+            "food_items": [
+              "pizza"
+            ],
+            "glycemic_index": 60,
+            "glycemic_load_range": [
+              12,
+              25
+            ]
+          },
+          "download_timestamp": "2025-08-05 13:18:37"
+        },
+        {
+          "filename": "margherita_pizza.jpg",
+          "category": "pizza",
+          "description": "Margherita pizza",
+          "source_url": "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=800",
+          "expected_results": {
+            "food_items": [
+              "pizza"
+            ],
+            "glycemic_index": 60,
+            "glycemic_load_range": [
+              12,
+              25
+            ]
+          },
+          "download_timestamp": "2025-08-05 13:18:39"
+        }
+      ]
+    },
+    "salads": {
+      "description": "Salad images to test low GI=15",
+      "images": [
+        {
+          "filename": "caesar_salad.jpg",
+          "category": "salads",
+          "description": "Caesar salad",
+          "source_url": "https://images.unsplash.com/photo-1550304943-4f24f54ddde9?w=800",
+          "expected_results": {
+            "food_items": [
+              "salad"
+            ],
+            "glycemic_index": 15,
+            "glycemic_load_range": [
+              2,
+              8
+            ]
+          },
+          "download_timestamp": "2025-08-05 13:18:41"
+        },
+        {
+          "filename": "greek_salad.jpg",
+          "category": "salads",
+          "description": "Greek salad",
+          "source_url": "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=800",
+          "expected_results": {
+            "food_items": [
+              "salad"
+            ],
+            "glycemic_index": 15,
+            "glycemic_load_range": [
+              2,
+              8
+            ]
+          },
+          "download_timestamp": "2025-08-05 13:18:42"
+        }
+      ]
+    },
+    "restaurant_meals": {
+      "description": "Restaurant-style meals from our database",
+      "images": [
+        {
+          "filename": "chipotle_bowl.jpg",
+          "category": "restaurant_meals",
+          "description": "Chipotle-style bowl",
+          "source_url": "https://images.unsplash.com/photo-1626700051175-6818013e1d4f?w=800",
+          "expected_results": {
+            "food_items": [],
+            "glycemic_index": null
+          },
+          "download_timestamp": "2025-08-05 13:18:43"
+        },
+        {
+          "filename": "pho_bowl.jpg",
+          "category": "restaurant_meals",
+          "description": "Vietnamese pho (GI=40)",
+          "source_url": "https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?w=800",
+          "expected_results": {
+            "food_items": [],
+            "glycemic_index": null
+          },
+          "download_timestamp": "2025-08-05 13:18:45"
+        },
+        {
+          "filename": "sushi_platter.jpg",
+          "category": "restaurant_meals",
+          "description": "Sushi platter",
+          "source_url": "https://images.unsplash.com/photo-1579584425555-c3ce17fd4351?w=800",
+          "expected_results": {
+            "food_items": [],
+            "glycemic_index": null
+          },
+          "download_timestamp": "2025-08-05 13:18:46"
+        }
+      ]
+    },
+    "breakfast": {
+      "description": "Breakfast items",
+      "images": [
+        {
+          "filename": "pancakes.jpg",
+          "category": "breakfast",
+          "description": "Stack of pancakes",
+          "source_url": "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=800",
+          "expected_results": {
+            "food_items": [],
+            "glycemic_index": null
+          },
+          "download_timestamp": "2025-08-05 13:18:47"
+        },
+        {
+          "filename": "eggs_bacon.jpg",
+          "category": "breakfast",
+          "description": "Eggs and bacon",
+          "source_url": "https://images.unsplash.com/photo-1525351484163-7529414344d8?w=800",
+          "expected_results": {
+            "food_items": [],
+            "glycemic_index": null
+          },
+          "download_timestamp": "2025-08-05 13:18:48"
+        }
+      ]
+    },
+    "complex_meals": {
+      "description": "Complex meals with multiple components",
+      "images": [
+        {
+          "filename": "bento_box.jpg",
+          "category": "complex_meals",
+          "description": "Japanese bento box",
+          "source_url": "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=800",
+          "expected_results": {
+            "food_items": [],
+            "glycemic_index": null
+          },
+          "download_timestamp": "2025-08-05 13:18:49"
+        },
+        {
+          "filename": "thanksgiving_plate.jpg",
+          "category": "complex_meals",
+          "description": "Full dinner plate",
+          "source_url": "https://images.unsplash.com/photo-1574672280600-4accfa5b6f98?w=800",
+          "expected_results": {
+            "food_items": [],
+            "glycemic_index": null
+          },
+          "download_timestamp": "2025-08-05 13:18:51"
+        }
+      ]
+    },
+    "challenging_cases": {
+      "description": "Edge cases and challenging images",
+      "images": [
+        {
+          "filename": "messy_plate.jpg",
+          "category": "challenging_cases",
+          "description": "Mixed food items",
+          "source_url": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800",
+          "expected_results": {
+            "food_items": [],
+            "glycemic_index": null
+          },
+          "download_timestamp": "2025-08-05 13:18:52"
+        },
+        {
+          "filename": "dark_lighting.jpg",
+          "category": "challenging_cases",
+          "description": "Food in low light",
+          "source_url": "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=800",
+          "expected_results": {
+            "food_items": [],
+            "glycemic_index": null
+          },
+          "download_timestamp": "2025-08-05 13:18:53"
+        },
+        {
+          "filename": "partial_food.jpg",
+          "category": "challenging_cases",
+          "description": "Partially eaten food",
+          "source_url": "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=800",
+          "expected_results": {
+            "food_items": [],
+            "glycemic_index": null
+          },
+          "download_timestamp": "2025-08-05 13:18:54"
+        }
+      ]
+    }
+  }
+}

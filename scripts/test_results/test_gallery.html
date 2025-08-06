@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GemMunch Test Images Gallery</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .category {
+            margin-bottom: 40px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .category h2 {
+            color: #2c5aa0;
+            border-bottom: 2px solid #2c5aa0;
+            padding-bottom: 10px;
+        }
+        .expected-gi {
+            color: #28a745;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        .images-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .image-card {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            text-align: center;
+        }
+        .image-card img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 4px;
+        }
+        .image-name {
+            margin-top: 10px;
+            font-weight: bold;
+            color: #495057;
+        }
+        .summary {
+            background: #e9ecef;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+        .issue {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🍔 GemMunch Test Images Gallery</h1>
+    
+    <div class="summary">
+        <h2>Test Summary</h2>
+        <p><strong>Total Test Images:</strong> 18 images across 8 categories</p>
+        <p><strong>Purpose:</strong> Test food recognition and glycemic index retrieval</p>
+        <p><strong>Device:</strong> Images are located in /sdcard/Pictures/GemMunchTests/</p>
+    </div>
+
+    <div class="issue">
+        <h3>⚠️ Known Issues</h3>
+        <ul>
+            <li><strong>Burger showing 110 calories:</strong> The app might be using USDA API fallback instead of our database entry (should be 390-840 calories)</li>
+            <li><strong>Beef patty showing 0 calories:</strong> No "beef patty" entry in database - needs to be added</li>
+            <li><strong>Some items show "Unknown" GI:</strong> Database entries missing for certain food components</li>
+        </ul>
+    </div>
+
+    <div class="category">
+        <h2>🌮 Tacos</h2>
+        <p class="expected-gi">Expected Glycemic Index: 52</p>
+        <div class="images-grid">
+            <div class="image-card">
+                <div class="image-name">hard_shell_tacos_3.jpg</div>
+                <p>3 hard shell tacos with beef</p>
+            </div>
+            <div class="image-card">
+                <div class="image-name">street_tacos.jpg</div>
+                <p>Street style tacos</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="category">
+        <h2>🍔 Burgers</h2>
+        <p class="expected-gi">Expected Glycemic Index: 66</p>
+        <div class="images-grid">
+            <div class="image-card">
+                <div class="image-name">classic_burger.jpg</div>
+                <p>Classic burger with fries</p>
+            </div>
+            <div class="image-card">
+                <div class="image-name">double_burger.jpg</div>
+                <p>Double cheeseburger</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="category">
+        <h2>🍕 Pizza</h2>
+        <p class="expected-gi">Expected Glycemic Index: 60</p>
+        <div class="images-grid">
+            <div class="image-card">
+                <div class="image-name">pepperoni_pizza.jpg</div>
+                <p>Pepperoni pizza</p>
+            </div>
+            <div class="image-card">
+                <div class="image-name">margherita_pizza.jpg</div>
+                <p>Margherita pizza</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="category">
+        <h2>🥗 Salads</h2>
+        <p class="expected-gi">Expected Glycemic Index: 15</p>
+        <div class="images-grid">
+            <div class="image-card">
+                <div class="image-name">caesar_salad.jpg</div>
+                <p>Caesar salad</p>
+            </div>
+            <div class="image-card">
+                <div class="image-name">greek_salad.jpg</div>
+                <p>Greek salad</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="category">
+        <h2>🍜 Restaurant Meals</h2>
+        <p class="expected-gi">Expected GI varies by dish:</p>
+        <ul>
+            <li>Pho: GI = 40</li>
+            <li>Chipotle bowl: Depends on ingredients</li>
+            <li>Sushi: GI = 55-70 (depending on rice)</li>
+        </ul>
+        <div class="images-grid">
+            <div class="image-card">
+                <div class="image-name">chipotle_bowl.jpg</div>
+                <p>Chipotle-style bowl</p>
+            </div>
+            <div class="image-card">
+                <div class="image-name">pho_bowl.jpg</div>
+                <p>Vietnamese pho (GI=40)</p>
+            </div>
+            <div class="image-card">
+                <div class="image-name">sushi_platter.jpg</div>
+                <p>Sushi platter</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="category">
+        <h2>🥞 Breakfast</h2>
+        <p class="expected-gi">Expected GI varies:</p>
+        <ul>
+            <li>Pancakes: GI = 67</li>
+            <li>Eggs: GI = 0 (no carbs)</li>
+            <li>Bacon: GI = 0 (no carbs)</li>
+        </ul>
+        <div class="images-grid">
+            <div class="image-card">
+                <div class="image-name">pancakes.jpg</div>
+                <p>Stack of pancakes</p>
+            </div>
+            <div class="image-card">
+                <div class="image-name">eggs_bacon.jpg</div>
+                <p>Eggs and bacon</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="category">
+        <h2>🍱 Complex Meals</h2>
+        <p>Multiple components - GI varies by ingredients</p>
+        <div class="images-grid">
+            <div class="image-card">
+                <div class="image-name">bento_box.jpg</div>
+                <p>Japanese bento box</p>
+            </div>
+            <div class="image-card">
+                <div class="image-name">thanksgiving_plate.jpg</div>
+                <p>Full dinner plate</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="category">
+        <h2>🔍 Challenging Cases</h2>
+        <p>Test edge cases for the AI model</p>
+        <div class="images-grid">
+            <div class="image-card">
+                <div class="image-name">messy_plate.jpg</div>
+                <p>Mixed food items</p>
+            </div>
+            <div class="image-card">
+                <div class="image-name">dark_lighting.jpg</div>
+                <p>Food in low light</p>
+            </div>
+            <div class="image-card">
+                <div class="image-name">partial_food.jpg</div>
+                <p>Partially eaten food</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

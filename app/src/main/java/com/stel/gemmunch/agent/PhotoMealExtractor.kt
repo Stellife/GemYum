@@ -22,6 +22,7 @@ import kotlinx.coroutines.delay
 import java.time.Instant
 import kotlin.system.measureTimeMillis
 import java.security.MessageDigest
+import com.stel.gemmunch.rag.SimpleFoodRAG
 
 private const val TAG = "PhotoMealExtractor"
 
@@ -53,6 +54,8 @@ class PhotoMealExtractor(
     private val enhancedNutrientDbHelper: EnhancedNutrientDbHelper,
     private val gson: Gson
 ) {
+    // RAG system for enhanced food recognition
+    private val foodRAG = SimpleFoodRAG(appContainer.applicationContext)
     // Reasoning prompt that includes chain of thought but still returns JSON
     private val reasoningPromptText = """
     Analyze the food in this image step by step. Show your reasoning, then provide the JSON.
@@ -138,12 +141,48 @@ class PhotoMealExtractor(
     
     Analyze the image and return only the JSON array:
     """.trimIndent()
+    
+    // RAG-enhanced prompt for improved accuracy
+    private suspend fun buildRAGEnhancedPrompt(userContext: String?): String {
+        // For demo, use a common food as seed
+        val seedFood = userContext?.split(" ")?.firstOrNull() ?: "food"
+        val similarFoods = foodRAG.retrieveSimilarFoods(seedFood, 3)
+        
+        if (similarFoods.isEmpty()) {
+            return strictJsonPromptText // Fallback to regular prompt
+        }
+        
+        val ragContext = foodRAG.buildRAGContext(similarFoods)
+        
+        return """
+        You are an AI-powered food recognition system with access to a nutrition database.
+        
+        === RETRIEVED CONTEXT ===
+        Similar foods from our database:
+        ${ragContext.similarFoods.joinToString("\n") { 
+            "• ${it.name}: ${it.calories} cal, typical portion: ${it.typicalPortions}"
+        }}
+        
+        ${ragContext.categoryInsights}
+        
+        === INSTRUCTIONS ===
+        Analyze the image and identify foods. Use the context above to:
+        1. Better estimate portion sizes
+        2. Identify similar items if exact match unclear
+        3. Provide more accurate calorie estimates
+        
+        Output ONLY a JSON array: [{"food": "name", "quantity": number, "unit": "unit", "confidence": 0.0-1.0}]
+        
+        Consider the similar foods above when identifying items in the image.
+        """.trimIndent()
+    }
 
     suspend fun extract(
         bitmap: Bitmap, 
         userContext: String? = null,
         appMode: AppMode = AppMode.SNAP_AND_LOG,
-        onProgress: ((AnalysisProgress) -> Unit)? = null
+        onProgress: ((AnalysisProgress) -> Unit)? = null,
+        useRAG: Boolean = true // Enable RAG by default for demonstration
     ): MealAnalysis = withContext(Dispatchers.IO) {
         val modelKey = VisionModelPreferencesManager.getSelectedVisionModel()
         val modelDisplayName = VisionModelPreferencesManager.getVisionModelDisplayName(modelKey)
@@ -174,16 +213,26 @@ class PhotoMealExtractor(
         try {
             // Step 2: Add the text prompt and the image to the session.
             val reasoningMode = ImageReasoningPreferencesManager.getSelectedMode()
-            val basePrompt = when {
-                // Use strict JSON prompt for SNAP_AND_LOG mode
-                appMode == AppMode.SNAP_AND_LOG -> strictJsonPromptText
-                // Otherwise use the configured reasoning mode
-                reasoningMode == ImageReasoningPreferencesManager.ImageReasoningMode.REASONING -> reasoningPromptText
-                else -> singleShotPromptText
-            }
             
-            // Build the final prompt with optional user context
-            val promptToUse = buildPromptWithContext(basePrompt, userContext)
+            // Determine if we should use RAG enhancement
+            val promptToUse = if (useRAG && appMode == AppMode.SNAP_AND_LOG) {
+                // Use RAG-enhanced prompt for better accuracy
+                Log.i(TAG, "🔍 RAG MODE ACTIVATED - Retrieving contextual knowledge...")
+                val ragPrompt = buildRAGEnhancedPrompt(userContext)
+                Log.i(TAG, "✅ RAG context retrieved and integrated into prompt")
+                ragPrompt
+            } else {
+                // Regular prompt selection
+                val basePrompt = when {
+                    // Use strict JSON prompt for SNAP_AND_LOG mode
+                    appMode == AppMode.SNAP_AND_LOG -> strictJsonPromptText
+                    // Otherwise use the configured reasoning mode
+                    reasoningMode == ImageReasoningPreferencesManager.ImageReasoningMode.REASONING -> reasoningPromptText
+                    else -> singleShotPromptText
+                }
+                // Build the final prompt with optional user context
+                buildPromptWithContext(basePrompt, userContext)
+            }
             
             // Step 2: Add context/prompt
             progress = progress.updateStep("Adding Context", AnalysisStep.StepStatus.IN_PROGRESS)
@@ -494,11 +543,16 @@ class PhotoMealExtractor(
                 .replace("```", "")
                 .trim()
 
-            // Try to extract JSON array if it's embedded in text
-            if (!cleanJson.startsWith("[")) {
-                // Look for JSON array pattern in the response - improved regex for nested objects
-                val jsonPattern = "\\[\\s*\\{[^\\]]*\\}\\s*\\]".toRegex(RegexOption.DOT_MATCHES_ALL)
-                val match = jsonPattern.find(cleanJson)
+            // Handle multiple JSON arrays (edge case where model returns multiple arrays)
+            val jsonArrayPattern = "\\[\\s*\\{[^\\[\\]]*\\}\\s*\\]".toRegex(RegexOption.DOT_MATCHES_ALL)
+            val allMatches = jsonArrayPattern.findAll(cleanJson).toList()
+            
+            if (allMatches.size > 1) {
+                Log.w(TAG, "Found ${allMatches.size} JSON arrays in response, using the first one")
+                cleanJson = allMatches.first().value
+            } else if (!cleanJson.startsWith("[")) {
+                // Try to extract JSON array if it's embedded in text
+                val match = jsonArrayPattern.find(cleanJson)
                 if (match != null) {
                     cleanJson = match.value
                     Log.w(TAG, "Extracted JSON from descriptive response")
@@ -508,11 +562,19 @@ class PhotoMealExtractor(
                         cleanJson = "[$cleanJson]"
                         Log.w(TAG, "Wrapped single object in array")
                     } else {
-                        // No valid JSON found
-                        Log.e(TAG, "AI returned descriptive text instead of JSON: $response")
-                        throw InvalidJsonResponseException(
-                            "The AI model did not return valid JSON. Please try switching to a different model (E4B recommended) or try taking a clearer photo."
-                        )
+                        // Try to find any JSON-like structure
+                        val objectPattern = "\\{[^{}]*\\}".toRegex(RegexOption.DOT_MATCHES_ALL)
+                        val objectMatches = objectPattern.findAll(cleanJson).toList()
+                        if (objectMatches.isNotEmpty()) {
+                            cleanJson = "[${objectMatches.joinToString(",") { it.value }}]"
+                            Log.w(TAG, "Extracted ${objectMatches.size} JSON objects and wrapped in array")
+                        } else {
+                            // No valid JSON found
+                            Log.e(TAG, "AI returned descriptive text instead of JSON: $response")
+                            throw InvalidJsonResponseException(
+                                "Unable to extract food items. Please try again with a clearer photo."
+                            )
+                        }
                     }
                 }
             }

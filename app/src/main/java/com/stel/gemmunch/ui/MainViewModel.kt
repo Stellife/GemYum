@@ -79,8 +79,24 @@ class MainViewModel(
                 // Update UI to show we're initializing
                 _uiState.update { it.copy(
                     downloadState = MultiDownloadState.AllComplete(modelFiles), 
-                    initializationProgress = "Initializing AI models..."
+                    initializationProgress = "Loading AI models into memory..."
                 ) }
+                
+                // Set up progress monitoring
+                viewModelScope.launch {
+                    appContainer.modelStatus.collect { status ->
+                        val progressText = when(status) {
+                            com.stel.gemmunch.ModelStatus.INITIALIZING -> "Loading AI models into memory..."
+                            com.stel.gemmunch.ModelStatus.PREPARING_SESSION -> "Preparing inference session (almost ready)..."
+                            com.stel.gemmunch.ModelStatus.READY -> null // Clear progress when ready
+                            com.stel.gemmunch.ModelStatus.RUNNING_INFERENCE -> "Processing..."
+                            com.stel.gemmunch.ModelStatus.CLEANUP -> "Cleaning up..."
+                        }
+                        if (!_uiState.value.isAiReady) {
+                            _uiState.update { it.copy(initializationProgress = progressText) }
+                        }
+                    }
+                }
                 
                 // All models are present, initialize the heavy AI components.
                 initMetrics.startSubPhase("ViewModelInitialization", "InitializeAppContainer")

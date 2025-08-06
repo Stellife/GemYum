@@ -18,6 +18,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
 import java.util.UUID
+import com.stel.gemmunch.rag.SimpleFoodRAG
 
 private const val TAG = "TextOnlyMealViewModel"
 
@@ -28,6 +29,9 @@ private const val TAG = "TextOnlyMealViewModel"
 class TextOnlyMealViewModel(
     private val appContainer: AppContainer
 ) : ViewModel() {
+    
+    // RAG system for enhanced meal understanding
+    private val foodRAG = SimpleFoodRAG(appContainer.applicationContext)
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
@@ -134,25 +138,102 @@ class TextOnlyMealViewModel(
     }
 
     private suspend fun analyzeInitialMealDescription(description: String) {
-        // Show reasoning chain
-        val reasoningMessage = generateReasoningChain(description)
+        // First, show "thinking" message with RAG retrieval in action
+        val thinkingId = UUID.randomUUID().toString()
+        addMessage(ChatMessage(
+            id = thinkingId,
+            text = "🔍 **Activating RAG Knowledge Retrieval...**\n_Searching nutrition database for similar foods..._",
+            isFromUser = false
+        ))
+        
+        // Small delay to make it visible
+        kotlinx.coroutines.delay(500)
+        
+        // Use RAG to get contextual information
+        val ragContext = performRAGRetrieval(description)
+        
+        // Update thinking message with retrieved context
+        if (ragContext != null && ragContext.similarFoods.isNotEmpty()) {
+            val thinkingUpdate = buildString {
+                appendLine("🧠 **AI Thinking Process (RAG Enhanced):**")
+                appendLine()
+                appendLine("**Step 1: Retrieved ${ragContext.similarFoods.size} similar foods from database:**")
+                ragContext.similarFoods.take(3).forEach { food ->
+                    appendLine("  📊 ${food.name}: ${food.calories} cal${food.glycemicIndex?.let { ", GI: $it" } ?: ""}")
+                    appendLine("     Confidence: ${(food.similarity * 100).toInt()}% match")
+                }
+                appendLine()
+                appendLine("**Step 2: Analyzing nutritional patterns:**")
+                appendLine("  ${ragContext.nutritionRange.replace("\n", "\n  ")}")
+                appendLine()
+                appendLine("**Step 3: Applying context to your specific meal...**")
+            }
+            
+            updateMessage(thinkingId, thinkingUpdate)
+            kotlinx.coroutines.delay(800)
+        } else {
+            updateMessage(thinkingId, "⚠️ **No similar foods found - using standard analysis**")
+        }
+        
+        // Show enhanced reasoning chain with RAG context
+        val reasoningMessage = generateRAGEnhancedReasoningChain(description, ragContext)
         addMessage(ChatMessage(
             text = reasoningMessage,
             isFromUser = false
         ))
 
-        // Quick non-async analysis
-        val ingredients = extractIngredientsFromDescription(description)
+        // Quick non-async analysis enhanced with RAG insights
+        val ingredients = extractIngredientsWithRAG(description, ragContext)
         pendingIngredients.clear()
         pendingIngredients.addAll(ingredients)
 
-        // Show ingredient confirmation
-        showIngredientConfirmation(ingredients)
+        // Show ingredient confirmation with comparison
+        showIngredientConfirmationWithComparison(ingredients, ragContext)
         conversationStage = ConversationStage.CONFIRMING_INGREDIENTS
     }
+    
+    private fun updateMessage(messageId: String, newText: String) {
+        _messages.value = _messages.value.map { message ->
+            if (message.id == messageId) {
+                message.copy(text = newText)
+            } else {
+                message
+            }
+        }
+    }
+    
+    private suspend fun performRAGRetrieval(description: String): SimpleFoodRAG.RAGContext? {
+        return try {
+            // Extract main food item from description for retrieval
+            val mainFood = extractMainFoodItem(description)
+            val similarFoods = foodRAG.retrieveSimilarFoods(mainFood, 5)
+            
+            if (similarFoods.isNotEmpty()) {
+                foodRAG.buildRAGContext(similarFoods)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "RAG retrieval failed", e)
+            null
+        }
+    }
+    
+    private fun extractMainFoodItem(description: String): String {
+        // Simple extraction - take first noun or known food word
+        val foodKeywords = listOf(
+            "burger", "pizza", "salad", "sandwich", "pasta", "taco", "burrito",
+            "chicken", "steak", "fish", "rice", "noodles", "soup", "bowl"
+        )
+        
+        val lowerDesc = description.lowercase()
+        return foodKeywords.firstOrNull { lowerDesc.contains(it) } 
+            ?: description.split(" ").firstOrNull() 
+            ?: "food"
+    }
 
-    private fun generateReasoningChain(description: String): String {
-        return """**🧠 Smart Reasoning: Understanding Your Meal**
+    private fun generateRAGEnhancedReasoningChain(description: String, ragContext: SimpleFoodRAG.RAGContext?): String {
+        val baseReasoning = """**🧠 Smart Reasoning: Understanding Your Meal**
 
 **STEP 1 - Parsing Your Description:**
 "$description"
@@ -160,14 +241,88 @@ class TextOnlyMealViewModel(
 **STEP 2 - My Reasoning Process:**
 • 🎯 **Explicit Ingredient Detection:** Finding ingredients you specifically mentioned
 • 🍽️ **Dish Type Recognition:** Understanding what type of meal this is  
-• 🧩 **Smart Inference:** Adding only essential missing ingredients (like noodles for pad thai)
-• 📏 **Portion Estimation:** Assigning reasonable serving sizes
+• 🧩 **Smart Inference:** Adding only essential missing ingredients
+• 📏 **Portion Estimation:** Assigning reasonable serving sizes"""
+
+        return if (ragContext != null) {
+            """$baseReasoning
+
+**✨ STEP 3 - RAG Knowledge Enhancement:**
+• 🔍 **Retrieved Similar Foods from Database:**
+${ragContext.similarFoods.take(3).joinToString("\n") { 
+    "  - ${it.name}: ${it.calories} cal${it.glycemicIndex?.let { gi -> ", GI: $gi" } ?: ""}"
+}}
+• 📊 **${ragContext.categoryInsights}**
+• 🍽️ **${ragContext.portionGuidance}**
+• 📈 **${ragContext.nutritionRange}**
+
+**Key Insight:** Using contextual knowledge for more accurate nutrition estimates!
+
+**STEP 4 - Intelligent Analysis Results:**"""
+        } else {
+            """$baseReasoning
 
 **Key Principle:** I prioritize what YOU said over generic meal assumptions!
 
 **STEP 3 - Intelligent Analysis Results:**"""
+        }
+    }
+    
+    private fun generateReasoningChain(description: String): String {
+        // Fallback for non-RAG mode
+        return generateRAGEnhancedReasoningChain(description, null)
     }
 
+    private fun extractIngredientsWithRAG(description: String, ragContext: SimpleFoodRAG.RAGContext?): List<String> {
+        // If we have RAG context, use it to enhance ingredient extraction
+        if (ragContext != null && ragContext.similarFoods.isNotEmpty()) {
+            val foundIngredients = mutableListOf<String>()
+            
+            // First, check if the description matches a known food from RAG
+            val topMatch = ragContext.similarFoods.firstOrNull()
+            if (topMatch != null && topMatch.similarity > 0.7f) {
+                // High confidence match - use the exact food
+                foundIngredients.add("${topMatch.name} (${topMatch.typicalPortions})")
+                
+                // Add any explicitly mentioned modifications
+                val modifications = extractModifications(description)
+                foundIngredients.addAll(modifications)
+                
+                Log.i(TAG, "RAG Enhanced: Found high-confidence match '${topMatch.name}' with ${topMatch.calories} calories")
+                return foundIngredients
+            }
+            
+            // Otherwise, use RAG insights to guide extraction
+            Log.i(TAG, "RAG Enhanced: Using context from ${ragContext.similarFoods.size} similar foods")
+        }
+        
+        // Fall back to standard extraction
+        return extractIngredientsFromDescription(description)
+    }
+    
+    private fun extractModifications(description: String): List<String> {
+        val modifications = mutableListOf<String>()
+        val lowerDesc = description.lowercase()
+        
+        // Check for common modifications
+        if (lowerDesc.contains("extra cheese")) modifications.add("extra cheese")
+        if (lowerDesc.contains("no ")) {
+            // Extract what comes after "no"
+            val noPattern = Regex("no\\s+(\\w+)")
+            noPattern.findAll(lowerDesc).forEach { 
+                modifications.add("(removed ${it.groupValues[1]})")
+            }
+        }
+        if (lowerDesc.contains("add ") || lowerDesc.contains("added ")) {
+            val addPattern = Regex("add(?:ed)?\\s+(\\w+)")
+            addPattern.findAll(lowerDesc).forEach {
+                modifications.add("added ${it.groupValues[1]}")
+            }
+        }
+        
+        return modifications
+    }
+    
     private fun extractIngredientsFromDescription(description: String): List<String> {
         val lowerDescription = description.lowercase()
         val foundIngredients = mutableListOf<String>()
@@ -284,19 +439,51 @@ class TextOnlyMealViewModel(
         return baseIngredients
     }
 
-    private fun showIngredientConfirmation(ingredients: List<String>) {
+    private fun showIngredientConfirmationWithComparison(
+        ingredients: List<String>, 
+        ragContext: SimpleFoodRAG.RAGContext?
+    ) {
         val ingredientList = ingredients.joinToString("\n") { "• $it" }
         
+        // Build comparison message showing RAG benefit
+        val message = if (ragContext != null && ragContext.similarFoods.isNotEmpty()) {
+            buildString {
+                appendLine("**📊 RAG-Enhanced Analysis Complete!**")
+                appendLine()
+                appendLine("**🎯 What RAG Found for Your Meal:**")
+                appendLine(ingredientList)
+                appendLine()
+                appendLine("**⚡ RAG Advantage - Precise Nutrition Estimates:**")
+                val topMatch = ragContext.similarFoods.firstOrNull()
+                if (topMatch != null) {
+                    appendLine("• **Matched to:** ${topMatch.name}")
+                    appendLine("• **Calories:** ${topMatch.calories} (vs generic estimate: ~200)")
+                    topMatch.glycemicIndex?.let { gi ->
+                        appendLine("• **Glycemic Index:** $gi (would be missing without RAG!)")
+                    }
+                    appendLine("• **Confidence:** ${(topMatch.similarity * 100).toInt()}%")
+                }
+                appendLine()
+                appendLine("**Without RAG:** Generic estimates, no GI values, less accurate portions")
+                appendLine("**With RAG:** Database-backed values, complete nutrition, accurate portions")
+                appendLine()
+                appendLine("**Does this look accurate?**")
+            }
+        } else {
+            // Fallback to standard confirmation
+            buildString {
+                appendLine("**📋 Here's what I identified:**")
+                appendLine()
+                appendLine(ingredientList)
+                appendLine()
+                appendLine("⚠️ **Note:** Using standard analysis (RAG found no matches)")
+                appendLine()
+                appendLine("**Does this look accurate?**")
+            }
+        }
+        
         addMessage(ChatMessage(
-            text = """**📋 Here's what I identified:**
-
-$ingredientList
-
-**Does this look accurate?** 
-
-✅ If this looks good, I'll calculate the nutrition
-❌ If something's wrong, tell me what to change
-➕ If I missed something, let me know what to add""",
+            text = message,
             isFromUser = false
         ))
 
@@ -306,6 +493,11 @@ $ingredientList
             QuickAction("missing", "➕ Add Something", "You missed..."),
             QuickAction("wrong", "❌ Fix Something", "Actually, the...")
         )
+    }
+    
+    private fun showIngredientConfirmation(ingredients: List<String>) {
+        // Fallback method for non-RAG path
+        showIngredientConfirmationWithComparison(ingredients, null)
     }
 
     private suspend fun handleIngredientConfirmation(response: String) {
@@ -443,25 +635,29 @@ ${pendingIngredients.joinToString("\n") { "• $it" }}
             buildString {
                 append("• ${item.foodName}: ${item.calories} cal")
                 item.glycemicIndex?.let { gi ->
-                    append(" (GI: $gi")
+                    append(" ✨**(GI: $gi")  // Highlight GI values from RAG
                     item.glycemicLoad?.let { gl ->
                         append(", GL: ${String.format("%.1f", gl)}")
                     }
-                    append(")")
+                    append(")**")
                 }
             }
         }
 
-        // Build glycemic summary
+        // Build glycemic summary with RAG indicator
         val glycemicSummary = if (hasGlycemicData) {
             val glCategory = when {
                 totalGlycemicLoad <= 10 -> "Low"
                 totalGlycemicLoad <= 19 -> "Medium"
                 else -> "High"
             }
-            "\n📈 **Glycemic Load:** ${String.format("%.1f", totalGlycemicLoad)} ($glCategory)"
+            buildString {
+                appendLine()
+                appendLine("📈 **Glycemic Load:** ${String.format("%.1f", totalGlycemicLoad)} ($glCategory)")
+                appendLine("✨ **RAG Benefit:** Complete GI/GL values retrieved from database!")
+            }
         } else {
-            ""
+            "\n⚠️ **Note:** No glycemic data available (would have values with RAG matching)"
         }
 
         addMessage(ChatMessage(

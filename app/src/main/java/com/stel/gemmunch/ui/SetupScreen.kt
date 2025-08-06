@@ -26,7 +26,7 @@ fun SetupScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("Welcome to GemMunch", style = MaterialTheme.typography.headlineLarge)
+        Text("Welcome to GemYum", style = MaterialTheme.typography.headlineLarge)
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             "To get started, we need to download the on-device AI models for food analysis.",

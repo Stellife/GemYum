@@ -64,7 +64,7 @@ private val LightColorScheme = lightColorScheme(
 )
 
 @Composable
-fun GemMunchTheme(
+fun GemYumTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {

@@ -22,7 +22,7 @@ import com.stel.gemmunch.ui.dialogs.SettingsDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GemMunchAppScaffold(
+fun GemYumAppScaffold(
     navController: NavController,
     mainViewModel: MainViewModel,
     analyzeAndChatViewModel: com.stel.gemmunch.viewmodels.EnhancedChatViewModel,
@@ -32,7 +32,7 @@ fun GemMunchAppScaffold(
     showBackButton: Boolean = true,
     title: @Composable () -> Unit = { 
         Text(
-            text = "GemMunch",
+            text = "GemYum",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )

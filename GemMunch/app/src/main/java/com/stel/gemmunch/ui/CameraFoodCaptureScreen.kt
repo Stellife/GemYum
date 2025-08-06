@@ -194,7 +194,7 @@ fun CameraFoodCaptureScreen(
     Scaffold(
         topBar = { 
             TopAppBar(
-                title = { Text("GemMunch") },
+                title = { Text("GemYum") },
                 actions = {
                     ModelStatusIndicator(
                         modelStatus = modelStatus,

@@ -29,7 +29,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import com.stel.gemmunch.GemMunchApplication
 import com.stel.gemmunch.agent.MultiDownloadState
 import com.stel.gemmunch.data.HealthConnectManager
-import com.stel.gemmunch.ui.theme.GemMunchTheme
+import com.stel.gemmunch.ui.theme.GemYumTheme
 
 import com.stel.gemmunch.ui.*
 import com.stel.gemmunch.viewmodels.EnhancedChatViewModel
@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            GemMunchTheme {
+            GemYumTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -90,7 +90,7 @@ class MainActivity : ComponentActivity() {
                     val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
 
                     // Always show main app - NutrientDB works without AI models
-                    GemMunchApp(
+                    GemYumApp(
                         mainViewModel = mainViewModel,
                         foodCaptureViewModel = foodCaptureViewModel,
                         analyzeAndChatViewModel = analyzeAndChatViewModel,
@@ -112,7 +112,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun GemMunchApp(
+fun GemYumApp(
     mainViewModel: MainViewModel,
     foodCaptureViewModel: FoodCaptureViewModel,
     analyzeAndChatViewModel: EnhancedChatViewModel,
@@ -129,7 +129,7 @@ fun GemMunchApp(
     val currentRoute = navBackStackEntry?.destination?.route
     
     // State to track current screen title
-    var currentTitle by remember { mutableStateOf<String>("GemMunch") }
+    var currentTitle by remember { mutableStateOf<String>("GemYum") }
     
     // Track current chat mode
     var currentChatMode by remember { mutableStateOf<String?>(null) }
@@ -149,15 +149,15 @@ fun GemMunchApp(
                 when (withCameraArg) {
                     "true" -> "Deep Chat: Vision + Text Async chat"
                     "false" -> "Text Only: Reasoning Model"
-                    else -> "GemMunch"
+                    else -> "GemYum"
                 }
             }
-            else -> "GemMunch"
+            else -> "GemYum"
         }
     }
     
     CompositionLocalProvider(LocalSessionManager provides sessionManager) {
-        GemMunchAppScaffold(
+        GemYumAppScaffold(
             navController = navController,
             mainViewModel = mainViewModel,
             analyzeAndChatViewModel = analyzeAndChatViewModel,
@@ -178,7 +178,11 @@ fun GemMunchApp(
                 modifier = Modifier.padding(paddingValues)
             ) {
         composable("home") {
-            com.stel.gemmunch.ui.screens.HomeScreen(navController = navController)
+            com.stel.gemmunch.ui.screens.HomeScreen(
+                navController = navController,
+                isAiReady = isAiReady,
+                initializationProgress = initializationProgress
+            )
         }
         composable("camera/{mode}") { backStackEntry ->
             // AI-dependent route - check if models are downloaded

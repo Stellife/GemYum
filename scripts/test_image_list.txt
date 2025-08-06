@@ -1,0 +1,47 @@
+GemMunch Test Images - Expected Glycemic Index Values
+=====================================================
+
+LOCATION ON DEVICE:
+/sdcard/Download/GemMunchTests/
+/sdcard/Pictures/GemMunchTests/
+
+TEST IMAGES BY CATEGORY:
+
+🌮 TACOS (Expected GI: 52)
+- hard_shell_tacos_3.jpg - 3 hard shell tacos with beef
+- street_tacos.jpg - Street style tacos
+
+🍔 BURGERS (Expected GI: 66)
+- classic_burger.jpg - Classic burger with fries
+- double_burger.jpg - Double cheeseburger
+
+🍕 PIZZA (Expected GI: 60)
+- pepperoni_pizza.jpg - Pepperoni pizza
+- margherita_pizza.jpg - Margherita pizza
+
+🥗 SALADS (Expected GI: 15)
+- caesar_salad.jpg - Caesar salad  
+- greek_salad.jpg - Greek salad
+
+🍜 RESTAURANT MEALS
+- chipotle_bowl.jpg - Chipotle bowl (GI varies by ingredients)
+- pho_bowl.jpg - Vietnamese pho (Expected GI: 40)
+- sushi_platter.jpg - Sushi platter (GI: 55-70)
+
+🥞 BREAKFAST
+- pancakes.jpg - Stack of pancakes (Expected GI: 67)
+- eggs_bacon.jpg - Eggs and bacon (GI: 0 - no carbs)
+
+🍱 COMPLEX MEALS
+- bento_box.jpg - Japanese bento box (GI varies)
+- thanksgiving_plate.jpg - Full dinner plate (GI varies)
+
+🔍 CHALLENGING CASES
+- messy_plate.jpg - Mixed food items
+- dark_lighting.jpg - Food in low light
+- partial_food.jpg - Partially eaten food
+
+KNOWN ISSUES:
+- Burger may show 110 calories (should be 390-840)
+- Beef patty shows 0 calories (not in database)
+- Some items may show "Unknown" GI
