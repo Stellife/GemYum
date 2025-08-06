@@ -1,0 +1,141 @@
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+release/
+
+# Gradle files
+.gradle/
+build/
+
+# Local configuration files (NEVER commit these!)
+local.properties
+gradle.properties
+!gradle.properties.template
+
+# Proguard folder
+proguard/
+
+# Log Files
+*.log
+
+# Android Studio Navigation editor temp files
+.navigation/
+
+# Android Studio captures folder
+captures/
+
+# IntelliJ
+*.iml
+.idea/
+*.iws
+
+# Keystore files
+*.jks
+*.keystore
+
+# External native build folder
+.externalNativeBuild
+.cxx/
+
+# Google Services (if using Firebase)
+google-services.json
+
+# Freeline
+freeline.py
+freeline/
+freeline_project_description.json
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+fastlane/readme.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv
+
+# Database files
+*.db
+*.sqlite
+*.db-journal
+
+# API Keys and secrets
+secrets.properties
+apikeys.properties
+*.env
+!.env.example
+
+# MacOS
+.DS_Store
+
+# Test artifacts
+test_results/
+test_images/current_screen.png
+test_images/manual_test_logs.txt
+ui_dump*.xml
+
+# Temporary files
+*.tmp
+*.temp
+*~
+*.swp
+*.bak
+*.backup
+
+# Model files (too large)
+*.tflite
+*.bin
+*.onnx
+models/gemma*
+models/*/
+
+# Large model files (don't commit to repo)
+*.task
+gemma-3n-*.task
+bundled_models/
+GemYum-v1.0-offline-package/
+GemYum-v1.0-offline-package.zip
+GemYum-v1.0-release.apk
+GemYum-v1.0-sideload.apk
+
+# Keep the nutrients database (it's essential and small)
+!app/src/main/assets/databases/nutrients.db
+
+# Private notes and planning
+ProjectPlanning/
+ClaudeDevelopmentNotes.md
+2025-*.txt
+VIDEO_SCRIPT.md
+PROBLEM_STATEMENT.md
+DEMO_FLOW.md
+SUBMISSION_CHECKLIST.md
+PACKAGE_CONTENTS.md
+
+# Scripts data (can be regenerated)
+scripts/nutrition_data/
+scripts/__pycache__/
+scripts/*.db
+scripts/*.db-journal
+scripts/*.db.gz
+!scripts/build_ultimate_nutrients_db.py
