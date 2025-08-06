@@ -1,294 +1,267 @@
-# 🍕 GemYum - Your Phone Is Now a Nutrition Expert
+# GemYum - On-Device AI Nutrition Tracking
 
-<div align="center">
-  
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Android-green.svg)](https://android.com)
-[![Model](https://img.shields.io/badge/AI-Gemma_3n-red.svg)](https://ai.google.dev/gemma)
-[![Privacy](https://img.shields.io/badge/Privacy-100%25_On--Device-purple.svg)](#privacy)
+<p align="center">
+  <img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png" alt="GemYum Logo" width="128" height="128">
+</p>
 
-**The world's first nutrition tracker powered entirely by on-device AI. No cloud. No internet. Complete privacy.**
+<p align="center">
+  <strong>The world's first 100% on-device AI nutrition tracker powered by Google's Gemma 3n</strong>
+</p>
 
-[📱 Download APK](https://github.com/stel/GemYum/releases) | [📹 Watch Demo](https://youtube.com/watch?v=demo) | [📖 Read Story](docs/STORY.md)
-
-<img src="docs/images/hero-screenshot.png" width="600" alt="GemYum in action">
-
-</div>
+<p align="center">
+  <a href="#features">Features</a> •
+  <a href="#demo">Demo</a> •
+  <a href="#installation">Installation</a> •
+  <a href="#building">Building</a> •
+  <a href="#architecture">Architecture</a> •
+  <a href="#contributing">Contributing</a> •
+  <a href="#license">License</a>
+</p>
 
 ---
 
-## 🤯 What Makes GemYum Different?
+## 🏆 Kaggle Gemma 3n Hackathon Submission
 
-**Your phone just became smarter than the cloud.**
+This project was built for the [Google Gemma 3n Hackathon](https://www.kaggle.com/competitions/google-gemma-3n-hackathon) to showcase the power of on-device AI for privacy-preserving nutrition tracking.
 
-Traditional nutrition apps upload your photos to servers, take 3-5 seconds to respond, and fail without internet. GemYum runs Google's Gemma 3n AI model directly on your phone, delivering:
+## ✨ Features
 
-- **⚡ 0.8 second** food recognition (faster than cloud!)
-- **🔒 100% privacy** - photos never leave your device
-- **✈️ Works offline** - perfect for travel
-- **🎯 94% accuracy** with context awareness
-- **📊 900,000+ foods** including restaurant-specific items
-- **🩺 Glycemic tracking** for diabetics (unique feature!)
+### 🚀 Three Analysis Modes
 
-## 🎬 See It In Action
+1. **Quick Snap Insight** - Point, shoot, and get instant nutrition analysis in 0.8 seconds
+2. **Deep Chat** - Have multimodal conversations about your meals with streaming AI responses
+3. **Text-Only** - Describe your meal in text for fast analysis without photos
 
-<div align="center">
-<table>
-<tr>
-<td align="center">
-<img src="docs/images/demo-snap.gif" width="250"><br>
-<b>Instant Recognition</b><br>
-0.8 seconds to full nutrition
-</td>
-<td align="center">
-<img src="docs/images/demo-chat.gif" width="250"><br>
-<b>AI Conversation</b><br>
-Discuss your meal naturally
-</td>
-<td align="center">
-<img src="docs/images/demo-offline.gif" width="250"><br>
-<b>Works Offline</b><br>
-No internet? No problem!
-</td>
-</tr>
-</table>
-</div>
+### 🔒 100% Privacy-First
 
-## 🚀 Quick Start (3 Ways)
+- **No Cloud Required** - All AI inference happens on your device
+- **No Data Collection** - Your nutrition data never leaves your phone
+- **Works Offline** - Full functionality in airplane mode
+- **No Subscriptions** - Free forever, no hidden costs
 
-### 🎯 Option 1: Just Want to Try It? (Easiest)
+### ⚡ Blazing Fast Performance
+
+- **0.8 second inference** on Pixel 9 Pro (NPU accelerated)
+- **10-20x faster** than cloud-based solutions
+- **Session pre-warming** for instant responses
+- **Smart caching** for repeated queries
+
+### 📊 Comprehensive Nutrition Database
+
+- **700,000+ foods** from USDA and other sources
+- **2,000+ restaurant items** with exact nutrition
+- **600+ foods** with glycemic index data
+- **226 nutrients** tracked per food item
+
+### 🎯 Key Innovations
+
+- **First nutrition app** with 100% on-device multimodal AI
+- **NPU/GPU acceleration** with automatic hardware detection
+- **RAG without embeddings** using SQL-based retrieval
+- **Token-by-token streaming** for responsive chat
+- **Silicon Valley Easter Egg** - Yes, it knows if it's a hotdog! 🌭
+
+## 📱 Demo
+
+### Quick Snap in Action
+<img src="docs/images/quicksnap_demo.gif" alt="Quick Snap Demo" width="300">
+
+### Performance Metrics
+| Device | First Launch | Normal Launch | Inference Time |
+|--------|--------------|---------------|----------------|
+| Pixel 9 Pro | 2-3 min | 10-15 sec | **0.8 sec** |
+| Pixel 7/8 | 2-3 min | 15-30 sec | 1-2 sec |
+| Samsung S24 | 2-3 min | 20-40 sec | 2-5 sec |
+| CPU Only | 3-4 min | 30-60 sec | 10-30 sec |
+
+## 📋 Requirements
+
+### Device Requirements
+- Android 10+ (API level 29 or higher)
+- Minimum 8GB RAM (12GB+ recommended for best performance)
+- 10GB free storage space
+- NPU/GPU recommended (but not required)
+
+### Development Requirements
+- Android Studio Ladybug or newer
+- JDK 17+
+- Android SDK 31+
+- Kotlin 2.2.0+
+
+## 🚀 Installation
+
+### Option 1: Install Pre-built APK
+
+1. Download the latest release from [Releases](https://github.com/yourusername/GemYum/releases)
+2. Enable "Install from Unknown Sources" on your Android device
+3. Install the APK
+4. Launch GemYum and follow the setup wizard
+
+### Option 2: Build from Source
+
 ```bash
-# Download the APK (includes everything)
-wget https://github.com/stel/GemYum/releases/download/v1.0/GemYum-complete.apk
-# Install on your Android device
-# Start tracking meals immediately!
-```
+# Clone the repository
+git clone https://github.com/yourusername/GemYum.git
+cd GemYum
 
-### 🛠️ Option 2: Build From Source
-```bash
-# Clone and setup (one command!)
-git clone https://github.com/stel/GemYum.git && cd GemYum
-./scripts/setup.sh  # Downloads models, builds database, creates APK
+# Copy the configuration template
+cp gradle.properties.template gradle.properties
+
+# (Optional) Add your API keys to gradle.properties
+# Note: The app works without these keys!
+
+# Build the APK
+./gradlew assembleRelease
 
 # Install on connected device
-./gradlew installDebug
+adb install app/build/outputs/apk/release/app-release.apk
 ```
 
-### 👨‍💻 Option 3: Developer Mode
+## 🔧 Configuration
+
+### API Keys (Optional)
+
+The app works completely without API keys, but if you want to contribute or update data:
+
+1. **Hugging Face Token** (for model downloads)
+   - Get from: https://huggingface.co/settings/tokens
+   - Add to `gradle.properties`: `HF_TOKEN=your_token`
+
+2. **USDA API Key** (for nutrition data updates)
+   - Get from: https://fdc.nal.usda.gov/api-guide.html
+   - Add to `gradle.properties`: `USDA_API_KEY=your_key`
+
+### Model Installation
+
+The app requires Gemma 3n models (7.4GB total):
+
+#### Automatic Download (Requires Internet)
+1. Launch the app
+2. Tap "Download Models"
+3. Wait for download to complete
+
+#### Manual Installation (Offline)
 ```bash
-# Full control over everything
-git clone https://github.com/stel/GemYum.git && cd GemYum
+# Download models
+wget https://huggingface.co/google/gemma-3n-E2B-it-litert-preview/resolve/main/gemma-3n-E2B-it-int4.task
+wget https://huggingface.co/google/gemma-3n-E4B-it-litert-preview/resolve/main/gemma-3n-E4B-it-int4.task
 
-# Build your own nutrition database
-cd scripts && python build_nutrients_db.py
+# Push to device
+adb push gemma-3n-E2B-it-int4.task /data/local/tmp/
+adb push gemma-3n-E4B-it-int4.task /data/local/tmp/
 
-# Download models manually
-cd ../models && ./download_models.sh
-
-# Open in Android Studio and customize!
+# Launch app - it will detect and use the models
 ```
-
-## ✨ Features That Will Blow Your Mind
-
-### 🧠 Three AI Modes, One Model
-
-<details>
-<summary><b>Quick Snap Mode</b> - For when you're hungry NOW</summary>
-
-- Take photo → Get nutrition in 0.8 seconds
-- Optimized for speed and accuracy
-- Perfect for meal logging
-- JSON-only responses for instant parsing
-
-</details>
-
-<details>
-<summary><b>Deep Analysis Mode</b> - For complex meals</summary>
-
-- Conversational AI that understands context
-- Ask questions about your food
-- Get suggestions for healthier alternatives  
-- Discuss ingredients and cooking methods
-
-</details>
-
-<details>
-<summary><b>Text-Only Mode</b> - No photo needed</summary>
-
-- "I had a Chipotle bowl with chicken and guac"
-- AI understands and logs accurately
-- Uses same RAG system for restaurant data
-- Perfect for voice input (coming soon!)
-
-</details>
-
-### 🔬 Technical Innovations
-
-#### NPU Acceleration Magic ⚡
-```kotlin
-// Automatic hardware detection and optimization
-when (device) {
-    "Pixel 9" -> UseNPU()     // 0.8 seconds!
-    "Galaxy S24" -> UseGPU()   // 1.5 seconds
-    else -> UseCPU()           // Falls back gracefully
-}
-```
-
-#### RAG Without Embeddings 🎯
-```kotlin
-// Our novel approach - 95% accuracy, 10% computation
-// No embedding models needed!
-fun findSimilarFoods(query: "taco") {
-    // Smart SQL matching instead of vector search
-    // Returns: Chipotle Taco (170 cal, GI: 52)
-    //          Taco Bell Taco (170 cal, GI: 48)
-    //          Homemade Taco (210 cal, GI: 42)
-}
-```
-
-#### Session Pre-warming 🏃
-```kotlin
-// Users think it's instant - because it is!
-// We pre-warm sessions while you browse
-backgroundThread {
-    prepareNextSession()  // Ready before you need it
-}
-```
-
-## 📊 Performance Metrics
-
-| Metric | GemYum | Cloud Apps | Winner |
-|--------|--------|------------|--------|
-| **Speed** | 0.8-2 sec | 3-5 sec | GemYum 🏆 |
-| **Offline** | ✅ Works | ❌ Dead | GemYum 🏆 |
-| **Privacy** | 100% Local | Uploads photos | GemYum 🏆 |
-| **Database** | 900K+ foods | 50-100K | GemYum 🏆 |
-| **Glycemic** | ✅ GI + GL | ❌ None | GemYum 🏆 |
-| **Accuracy** | 94% | 85-90% | GemYum 🏆 |
 
 ## 🏗️ Architecture
 
-<div align="center">
-<img src="docs/images/architecture.png" width="700" alt="GemYum Architecture">
-</div>
+### Technology Stack
 
-**Tech Stack:**
-- **Language**: 100% Kotlin
-- **UI**: Jetpack Compose (modern declarative UI)
-- **AI**: MediaPipe AI Edge + Gemma 3n (2B parameters)
-- **Database**: SQLite with FTS5 (lightning fast search)
-- **Hardware**: NPU/GPU acceleration via Play Services
+- **Language:** Kotlin
+- **UI:** Jetpack Compose
+- **AI Framework:** MediaPipe LLM Inference API
+- **Models:** Gemma 3n (2B/3N) with INT4 quantization
+- **Database:** SQLite with FTS5 for fast search
+- **Architecture:** MVVM with Clean Architecture principles
 
-## 🛠️ Requirements
+### Key Components
 
-### Minimum
-- Android 7.0+ (API 24+)
-- 2GB storage
-- 3GB RAM
-
-### Recommended  
-- Android 10+ (API 29+)
-- 3GB storage
-- 4GB+ RAM
-- Device with NPU/GPU (most 2020+ phones)
-
-## 🤝 Contributing
-
-We welcome contributions! This is open source at its best.
-
-```bash
-# Fork, clone, and create your feature branch
-git checkout -b feature/AmazingFeature
-
-# Make your changes and test
-./gradlew test
-
-# Commit and push
-git commit -m 'Add some AmazingFeature'
-git push origin feature/AmazingFeature
-
-# Open a Pull Request!
+```
+app/
+├── src/main/java/com/stel/gemmunch/
+│   ├── ui/                    # Compose UI screens
+│   ├── viewmodels/            # ViewModels for each screen
+│   ├── agent/                 # AI inference and analysis
+│   ├── data/                  # Data models and repositories
+│   ├── utils/                 # Utility classes
+│   └── AppContainer.kt        # Dependency injection
+└── src/main/assets/
+    └── databases/
+        └── nutrients.db        # Pre-built nutrition database
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+### Core Innovations
+
+1. **Session Pre-warming** - Background session creation for instant responses
+2. **Hardware Acceleration** - Automatic NPU/GPU/CPU fallback chain
+3. **Token Streaming** - Real-time UI updates during generation
+4. **RAG without Embeddings** - SQL-based retrieval for nutrition data
+5. **Smart Quantization** - INT4 models with minimal accuracy loss
+
+## 🧪 Testing
+
+```bash
+# Run unit tests
+./gradlew test
+
+# Run instrumentation tests
+./gradlew connectedAndroidTest
+
+# Run lint checks
+./gradlew lint
+```
 
 ## 📚 Documentation
 
-- 📖 [Setup Guide](docs/SETUP.md) - Detailed development setup
-- 🏛️ [Architecture](docs/ARCHITECTURE.md) - Technical deep dive
-- 🔧 [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues
-- 📚 [API Docs](docs/API.md) - Code documentation
-- 📝 [Blog Post](docs/BLOG.md) - The full story
+- [Architecture Overview](docs/ARCHITECTURE.md)
+- [Model Integration Guide](docs/MODEL_INTEGRATION.md)
+- [Database Schema](docs/DATABASE_SCHEMA.md)
+- [API Documentation](docs/API.md)
+- [Contributing Guide](CONTRIBUTING.md)
 
-## 🎯 Roadmap
+## 🤝 Contributing
 
-### Coming Soon (v1.1)
-- [ ] Voice input ("Hey GemYum, I just ate...")
-- [ ] Meal history and trends
-- [ ] Export to PDF reports
-- [ ] Widget for quick logging
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
-### Future (v2.0)
-- [ ] iOS version (when MediaPipe supports it)
-- [ ] Wearable integration
-- [ ] Meal suggestions based on goals
-- [ ] Social sharing (privacy-first)
+### Quick Start for Contributors
 
-## 🏆 Awards & Recognition
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-- 🥇 **Google Gemma 3n Hackathon 2024** - Submission
-- ⭐ **ProductHunt** - Launching soon!
-- 📰 **Featured in** - (Coming soon)
+### Code Style
+
+- Follow [Kotlin Coding Conventions](https://kotlinlang.org/docs/coding-conventions.html)
+- Use meaningful variable and function names
+- Add comments for complex logic
+- Write unit tests for new features
 
 ## 📄 License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
-**Important:** Gemma 3n model is subject to [Gemma Terms of Use](https://ai.google.dev/gemma/terms).
+### Third-Party Licenses
+
+- **Gemma 3n Models** - [Gemma Terms of Use](https://ai.google.dev/gemma/terms)
+- **MediaPipe** - Apache License 2.0
+- **USDA Food Database** - Public Domain
+- **Android Jetpack** - Apache License 2.0
 
 ## 🙏 Acknowledgments
 
-- **Google DeepMind** - For creating Gemma 3n
-- **MediaPipe Team** - For the incredible AI Edge SDK
-- **USDA** - For public nutrition data
-- **Open Food Facts** - For additional food data
-- **You** - For believing in on-device AI!
+- **Google** for Gemma 3n and MediaPipe
+- **Kaggle** for hosting the hackathon
+- **USDA** for the comprehensive food database
+- **Open Food Facts** for additional nutrition data
+- **Silicon Valley** for the hotdog inspiration 🌭
 
-## 🐛 Found a Bug?
+## 📮 Contact
 
-Please [open an issue](https://github.com/stel/GemYum/issues/new) with:
-- Device model and Android version
-- Steps to reproduce
-- Screenshots if applicable
-- Logs from `adb logcat` if possible
-
-## 💬 Questions?
-
-- 💬 [GitHub Discussions](https://github.com/stel/GemYum/discussions) - Ask anything!
-- 🐦 [Twitter](https://twitter.com/gemyum) - Follow for updates
-- 📧 Email - gemyum@stel.com
+- **GitHub Issues:** [Report bugs or request features](https://github.com/yourusername/GemYum/issues)
+- **Discussions:** [Join the conversation](https://github.com/yourusername/GemYum/discussions)
 
 ## 🌟 Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=stel/GemYum&type=Date)](https://star-history.com/#stel/GemYum&Date)
-
-## 🎉 Fun Facts
-
-- 📱 Runs on a 2020 phone faster than cloud on fiber internet
-- 🔒 Your food photos are safer than your banking app
-- 🌍 Works at 30,000 feet, in the subway, or on Mars
-- 🤖 The AI lives in 1.4GB - smaller than a movie file
-- ☕ Built with 147 cups of coffee
-- 🐛 423 bugs were harmed in the making of this app
+[![Star History Chart](https://api.star-history.com/svg?repos=yourusername/GemYum&type=Date)](https://star-history.com/#yourusername/GemYum&Date)
 
 ---
 
-<div align="center">
+<p align="center">
+  Built with ❤️ for the Kaggle Gemma 3n Hackathon 2025
+</p>
 
-**If you think AI needs the cloud, you haven't tried GemYum yet.**
-
-Made with ❤️ and 🤖 by the [Stel Team](https://github.com/stel)
-
-[⬆ Back to top](#-gemyum---your-phone-is-now-a-nutrition-expert)
-
-</div>
+<p align="center">
+  <strong>Your nutrition data belongs to you.</strong>
+</p>

@@ -38,14 +38,15 @@ import java.io.File
 private const val TAG = "AppContainer"
 
 /**
- * Represents the current state of the AI model
+ * Represents the current state of the AI model throughout its lifecycle.
+ * Used to provide UI feedback and manage session states.
  */
 enum class ModelStatus {
-    INITIALIZING,
-    PREPARING_SESSION,
-    READY,
-    RUNNING_INFERENCE,
-    CLEANUP
+    INITIALIZING,        // Model is being loaded into memory
+    PREPARING_SESSION,   // Creating inference session
+    READY,              // Ready for inference
+    RUNNING_INFERENCE,  // Currently processing
+    CLEANUP             // Releasing resources
 }
 
 /**
