@@ -21,7 +21,7 @@ GemYum is a privacy-first Android application that uses Google's Gemma 3n model 
 
 - **[Latest Release (v1.4.0)](https://drive.google.com/file/d/16-xZpzdZA3NEv48slvQVASs6c6MYEBCF/view?usp=drive_link)** - Standard APK (requires internet for models)
 - **[Offline Package](https://drive.google.com/drive/folders/1jvMmeec--PYCZfIY3sXKF5LM9YHlM5w-?usp=drive_link)** - Pre-bundled with AI models
-- **[All Releases](RELEASES.md)** - Version history and changelogs
+- **[All Releases](docs/RELEASES.md)** - Version history and changelogs
 
 ## 🚀 Quick Start
 
