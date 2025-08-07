@@ -1,12 +1,12 @@
 # GemYum - On-Device AI Nutrition Tracking
 
-[![Kaggle Competition](https://img.shields.io/badge/Kaggle-Gemma%20Sprint-blue)](https://www.kaggle.com/competitions/gemma-sprint-2025)
+[![Kaggle Competition](https://img.shields.io/badge/Kaggle-Gemma%203n%20Impact%20Challenge-blue)](https://www.kaggle.com/competitions/google-gemma-3n-hackathon)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-API%2024%2B-brightgreen)](https://developer.android.com/)
 
-## 🏆 Kaggle Gemma Sprint 2025 Submission
+## 🏆 Google - The Gemma 3n Impact Challenge (8/6/25)
 
-GemYum is a privacy-first Android application that uses Google's Gemma 3n model for on-device food recognition and nutrition tracking. Built for the Kaggle Gemma Sprint AI competition, it demonstrates practical edge AI applications in health and wellness.
+GemYum is a privacy-first Android application that uses Google's Gemma 3n model for on-device food recognition and nutrition tracking. Built for Google - The Gemma 3n Impact Challenge (8/6/25), it demonstrates practical edge AI applications in health and wellness.
 
 ## ✨ Key Features
 
@@ -111,4 +111,4 @@ For questions about this Kaggle submission, please open an issue on GitHub.
 
 ---
 
-**Competition Entry**: This project is submitted to the [Kaggle Gemma Sprint 2025](https://www.kaggle.com/competitions/gemma-sprint-2025) competition.
+**Competition Entry**: This project is submitted to [Google - The Gemma 3n Impact Challenge (8/6/25)](https://www.kaggle.com/competitions/google-gemma-3n-hackathon).
