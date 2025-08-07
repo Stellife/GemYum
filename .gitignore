@@ -25,6 +25,20 @@ local.properties
 gradle.properties
 !gradle.properties.template
 
+# Service account keys and credentials (CRITICAL - NEVER COMMIT!)
+*-key.json
+*-credentials.json
+*-service-account.json
+service-account-*.json
+gemmunch-analytics-key.json
+firebase-*.json
+google-services.json
+*.p12
+*.pem
+*.key
+*.keystore
+!android_keystore.jks
+
 # Proguard folder
 proguard/
 
