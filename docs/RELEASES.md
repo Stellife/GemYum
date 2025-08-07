@@ -17,7 +17,7 @@
 - ✅ Comprehensive glycemic index data (61% coverage)
 - ✅ Improved model download experience
 - ✅ Better error handling and user feedback
-- ✅ Optimized for Google - The Gemma 3n Impact Challenge (8/6/25)
+- ✅ Optimized for Google - Gemma 3n Hackathon
 
 ### AI Models
 The app uses Google's Gemma 3n models for on-device inference:
